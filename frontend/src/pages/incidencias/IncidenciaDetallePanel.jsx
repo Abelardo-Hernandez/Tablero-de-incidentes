@@ -1,0 +1,555 @@
+import {
+    AlertCircle,
+    CheckCircle2,
+    Clock3,
+    MessageSquarePlus,
+    PlayCircle,
+    Send,
+    UserPlus,
+    X,
+    XCircle
+} from 'lucide-react';
+
+import {
+    useEffect,
+    useMemo,
+    useState
+} from 'react';
+
+import {
+    agregarComentarioIncidencia,
+    asignarIncidencia,
+    cambiarEstadoIncidencia,
+    obtenerIncidenciaPorId
+} from '../../services/incidencias.service';
+
+import {
+    formatearFechaHora,
+    obtenerTiempoTranscurrido
+} from '../../utils/fechas';
+
+const etiquetasEstado = {
+    nueva: 'Nueva',
+    asignada: 'Asignada',
+    en_proceso: 'En proceso',
+    resuelta: 'Resuelta',
+    cerrada: 'Cerrada',
+    cancelada: 'Cancelada'
+};
+
+const etiquetasPrioridad = {
+    critica: 'Crítica',
+    alta: 'Alta',
+    media: 'Media',
+    baja: 'Baja'
+};
+
+const etiquetasTipo = {
+    falla_equipo: 'Falla de equipo',
+    falta_material: 'Falta de material',
+    calidad: 'Calidad',
+    seguridad: 'Seguridad',
+    proceso: 'Proceso',
+    otro: 'Otro'
+};
+
+function IncidenciaDetallePanel({
+    incidencia,
+    usuarios,
+    abierto,
+    onCerrar,
+    onActualizado
+}) {
+    const [detalle, setDetalle] = useState(null);
+    const [cargando, setCargando] = useState(false);
+    const [guardando, setGuardando] = useState(false);
+    const [error, setError] = useState('');
+    const [comentario, setComentario] = useState('');
+    const [responsableId, setResponsableId] = useState('');
+
+    useEffect(() => {
+        async function cargarDetalle() {
+            if (!incidencia?.id || !abierto) {
+                return;
+            }
+
+            try {
+                setCargando(true);
+                setError('');
+
+                const respuesta = await obtenerIncidenciaPorId(
+                    incidencia.id
+                );
+
+                setDetalle(respuesta.data);
+                setResponsableId(
+                    respuesta.data.responsable_usuario_id || ''
+                );
+            } catch (errorSolicitud) {
+                console.error(
+                    'Error al cargar incidencia:',
+                    errorSolicitud
+                );
+
+                setError(
+                    errorSolicitud.response?.data?.message ||
+                    'No fue posible cargar la incidencia.'
+                );
+            } finally {
+                setCargando(false);
+            }
+        }
+
+        cargarDetalle();
+    }, [incidencia?.id, abierto]);
+
+    const usuariosResponsables = useMemo(() => {
+        if (!detalle?.area_responsable_id) {
+            return usuarios;
+        }
+
+        return usuarios.filter(
+            (usuario) =>
+                Number(usuario.area_id) ===
+                    Number(detalle.area_responsable_id) ||
+                usuario.rol === 'administrador'
+        );
+    }, [usuarios, detalle?.area_responsable_id]);
+
+    if (!abierto || !incidencia) {
+        return null;
+    }
+
+    const incidenciaActual = detalle || incidencia;
+
+    async function refrescarDetalle() {
+        const respuesta = await obtenerIncidenciaPorId(
+            incidenciaActual.id
+        );
+
+        setDetalle(respuesta.data);
+        setResponsableId(
+            respuesta.data.responsable_usuario_id || ''
+        );
+        await onActualizado();
+    }
+
+    async function asignar() {
+        if (!responsableId) {
+            setError('Selecciona un responsable.');
+            return;
+        }
+
+        try {
+            setGuardando(true);
+            setError('');
+            await asignarIncidencia(
+                incidenciaActual.id,
+                Number(responsableId)
+            );
+            await refrescarDetalle();
+        } catch (errorSolicitud) {
+            setError(
+                errorSolicitud.response?.data?.message ||
+                'No fue posible asignar la incidencia.'
+            );
+        } finally {
+            setGuardando(false);
+        }
+    }
+
+    async function cambiarEstado(estado) {
+        try {
+            setGuardando(true);
+            setError('');
+            await cambiarEstadoIncidencia(
+                incidenciaActual.id,
+                estado
+            );
+            await refrescarDetalle();
+        } catch (errorSolicitud) {
+            setError(
+                errorSolicitud.response?.data?.message ||
+                'No fue posible cambiar el estado.'
+            );
+        } finally {
+            setGuardando(false);
+        }
+    }
+
+    async function comentar(evento) {
+        evento.preventDefault();
+
+        if (!comentario.trim()) {
+            return;
+        }
+
+        try {
+            setGuardando(true);
+            setError('');
+            await agregarComentarioIncidencia(
+                incidenciaActual.id,
+                comentario.trim()
+            );
+            setComentario('');
+            await refrescarDetalle();
+        } catch (errorSolicitud) {
+            setError(
+                errorSolicitud.response?.data?.message ||
+                'No fue posible agregar el comentario.'
+            );
+        } finally {
+            setGuardando(false);
+        }
+    }
+
+    return (
+        <div className="fixed inset-0 z-[90]">
+            <button
+                type="button"
+                aria-label="Cerrar detalle"
+                onClick={onCerrar}
+                className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
+            />
+
+            <aside className="custom-scrollbar absolute right-0 top-0 h-full w-full max-w-2xl overflow-y-auto bg-white shadow-2xl">
+                <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-5 backdrop-blur">
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                            <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">
+                                {incidenciaActual.folio ||
+                                    `INC-${incidenciaActual.id}`}
+                            </p>
+
+                            <h2 className="mt-2 text-2xl font-bold text-slate-950">
+                                {incidenciaActual.titulo}
+                            </h2>
+
+                            <p className="mt-2 text-sm text-slate-500">
+                                {etiquetasEstado[incidenciaActual.estado]} · {etiquetasPrioridad[incidenciaActual.prioridad]}
+                            </p>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={onCerrar}
+                            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                            aria-label="Cerrar"
+                        >
+                            <X size={20} />
+                        </button>
+                    </div>
+                </header>
+
+                <div className="space-y-6 p-6">
+                    {error && (
+                        <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                            <AlertCircle
+                                size={18}
+                                className="mt-0.5 shrink-0"
+                            />
+                            <span>{error}</span>
+                        </div>
+                    )}
+
+                    {cargando ? (
+                        <div className="grid min-h-80 place-items-center">
+                            <div className="text-center">
+                                <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-emerald-600" />
+                                <p className="mt-4 text-sm text-slate-500">
+                                    Cargando detalle...
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <section className="rounded-3xl border border-slate-200 p-5">
+                                <h3 className="font-bold text-slate-950">
+                                    Información general
+                                </h3>
+
+                                <p className="mt-4 leading-7 text-slate-600">
+                                    {incidenciaActual.descripcion}
+                                </p>
+
+                                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                                    <Info
+                                        etiqueta="Área origen"
+                                        valor={incidenciaActual.area_origen_nombre || 'Sin origen'}
+                                    />
+                                    <Info
+                                        etiqueta="Área responsable"
+                                        valor={incidenciaActual.area_nombre || 'Sin área'}
+                                    />
+                                    <Info
+                                        etiqueta="Línea"
+                                        valor={incidenciaActual.linea_nombre || 'Sin línea'}
+                                    />
+                                    <Info
+                                        etiqueta="Reporta"
+                                        valor={incidenciaActual.reporta_nombre || 'Sin usuario'}
+                                    />
+                                    <Info
+                                        etiqueta="Responsable"
+                                        valor={incidenciaActual.responsable_nombre || 'Sin responsable'}
+                                    />
+                                    <Info
+                                        etiqueta="Turno"
+                                        valor={incidenciaActual.turno || 'Sin turno'}
+                                    />
+                                    <Info
+                                        etiqueta="Tipo"
+                                        valor={etiquetasTipo[incidenciaActual.tipo] || 'Otro'}
+                                    />
+                                    <Info
+                                        etiqueta="Detuvo línea"
+                                        valor={incidenciaActual.detuvo_linea ? 'Sí' : 'No'}
+                                    />
+                                    <Info
+                                        etiqueta="Cantidad afectada"
+                                        valor={incidenciaActual.cantidad_afectada || 'No registrada'}
+                                    />
+                                    <Info
+                                        etiqueta="Tiempo"
+                                        valor={obtenerTiempoTranscurrido(incidenciaActual.fecha_creacion)}
+                                    />
+                                </div>
+                            </section>
+
+                            <section className="rounded-3xl border border-slate-200 p-5">
+                                <h3 className="font-bold text-slate-950">
+                                    Responsable
+                                </h3>
+
+                                <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+                                    <select
+                                        value={responsableId}
+                                        onChange={(evento) =>
+                                            setResponsableId(
+                                                evento.target.value
+                                            )
+                                        }
+                                        disabled={guardando}
+                                        className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                                    >
+                                        <option value="">
+                                            Seleccionar responsable
+                                        </option>
+
+                                        {usuariosResponsables.map(
+                                            (usuario) => (
+                                                <option
+                                                    key={usuario.id}
+                                                    value={usuario.id}
+                                                >
+                                                    {usuario.nombre}
+                                                </option>
+                                            )
+                                        )}
+                                    </select>
+
+                                    <button
+                                        type="button"
+                                        onClick={asignar}
+                                        disabled={guardando}
+                                        className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 font-bold text-white transition hover:bg-emerald-600 disabled:opacity-60"
+                                    >
+                                        <UserPlus size={18} />
+                                        Asignar
+                                    </button>
+                                </div>
+                            </section>
+
+                            <section className="rounded-3xl border border-slate-200 p-5">
+                                <h3 className="font-bold text-slate-950">
+                                    Acciones
+                                </h3>
+
+                                <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                                    <Accion
+                                        texto="Iniciar"
+                                        icono={PlayCircle}
+                                        onClick={() =>
+                                            cambiarEstado('en_proceso')
+                                        }
+                                        disabled={guardando}
+                                    />
+                                    <Accion
+                                        texto="Resolver"
+                                        icono={CheckCircle2}
+                                        onClick={() =>
+                                            cambiarEstado('resuelta')
+                                        }
+                                        disabled={guardando}
+                                    />
+                                    <Accion
+                                        texto="Cerrar"
+                                        icono={CheckCircle2}
+                                        onClick={() =>
+                                            cambiarEstado('cerrada')
+                                        }
+                                        disabled={guardando}
+                                    />
+                                    <Accion
+                                        texto="Cancelar"
+                                        icono={XCircle}
+                                        onClick={() =>
+                                            cambiarEstado('cancelada')
+                                        }
+                                        disabled={guardando}
+                                        peligro
+                                    />
+                                </div>
+                            </section>
+
+                            <section className="rounded-3xl border border-slate-200 p-5">
+                                <div className="flex items-center gap-2">
+                                    <Clock3
+                                        size={18}
+                                        className="text-emerald-700"
+                                    />
+                                    <h3 className="font-bold text-slate-950">
+                                        Timeline
+                                    </h3>
+                                </div>
+
+                                <div className="mt-5 space-y-4">
+                                    {(incidenciaActual.historial || []).length === 0 ? (
+                                        <p className="text-sm text-slate-500">
+                                            Sin movimientos registrados.
+                                        </p>
+                                    ) : (
+                                        incidenciaActual.historial.map(
+                                            (evento) => (
+                                                <div
+                                                    key={evento.id}
+                                                    className="border-l-2 border-emerald-200 pl-4"
+                                                >
+                                                    <p className="font-semibold text-slate-800">
+                                                        {evento.accion}
+                                                    </p>
+                                                    <p className="mt-1 text-xs text-slate-400">
+                                                        {formatearFechaHora(evento.fecha_creacion)} · {evento.usuario_nombre || 'Sistema'}
+                                                    </p>
+                                                    {evento.comentario && (
+                                                        <p className="mt-2 text-sm text-slate-500">
+                                                            {evento.comentario}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            )
+                                        )
+                                    )}
+                                </div>
+                            </section>
+
+                            <section className="rounded-3xl border border-slate-200 p-5">
+                                <div className="flex items-center gap-2">
+                                    <MessageSquarePlus
+                                        size={18}
+                                        className="text-emerald-700"
+                                    />
+                                    <h3 className="font-bold text-slate-950">
+                                        Comentarios
+                                    </h3>
+                                </div>
+
+                                <form
+                                    onSubmit={comentar}
+                                    className="mt-4 flex gap-3"
+                                >
+                                    <input
+                                        value={comentario}
+                                        onChange={(evento) =>
+                                            setComentario(
+                                                evento.target.value
+                                            )
+                                        }
+                                        placeholder="Agregar comentario interno..."
+                                        disabled={guardando}
+                                        className="h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                                    />
+                                    <button
+                                        type="submit"
+                                        disabled={guardando}
+                                        className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-700 text-white transition hover:bg-emerald-600 disabled:opacity-60"
+                                        aria-label="Agregar comentario"
+                                    >
+                                        <Send size={18} />
+                                    </button>
+                                </form>
+
+                                <div className="mt-5 space-y-3">
+                                    {(incidenciaActual.comentarios || []).length === 0 ? (
+                                        <p className="text-sm text-slate-500">
+                                            Sin comentarios internos.
+                                        </p>
+                                    ) : (
+                                        incidenciaActual.comentarios.map(
+                                            (item) => (
+                                                <div
+                                                    key={item.id}
+                                                    className="rounded-2xl bg-slate-50 p-4"
+                                                >
+                                                    <p className="text-sm text-slate-700">
+                                                        {item.comentario}
+                                                    </p>
+                                                    <p className="mt-2 text-xs text-slate-400">
+                                                        {item.usuario_nombre || 'Usuario'} · {formatearFechaHora(item.fecha_creacion)}
+                                                    </p>
+                                                </div>
+                                            )
+                                        )
+                                    )}
+                                </div>
+                            </section>
+                        </>
+                    )}
+                </div>
+            </aside>
+        </div>
+    );
+}
+
+function Info({
+    etiqueta,
+    valor
+}) {
+    return (
+        <div className="rounded-2xl bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase text-slate-400">
+                {etiqueta}
+            </p>
+            <p className="mt-1 truncate font-semibold text-slate-800">
+                {valor}
+            </p>
+        </div>
+    );
+}
+
+function Accion({
+    texto,
+    icono: Icono,
+    onClick,
+    disabled,
+    peligro = false
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled}
+            className={[
+                'inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 font-bold transition disabled:opacity-60',
+                peligro
+                    ? 'bg-red-50 text-red-700 hover:bg-red-100'
+                    : 'bg-slate-900 text-white hover:bg-slate-800'
+            ].join(' ')}
+        >
+            <Icono size={18} />
+            {texto}
+        </button>
+    );
+}
+
+export default IncidenciaDetallePanel;
