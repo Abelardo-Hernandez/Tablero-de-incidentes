@@ -1,0 +1,1405 @@
+import {
+    AlertTriangle,
+    ChevronDown,
+    Clock3,
+    Download,
+    FileDown,
+    Filter,
+    Printer,
+    Search,
+    Trophy
+} from 'lucide-react';
+
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useState
+} from 'react';
+
+import {
+    obtenerAreasActivas,
+    obtenerLineasActivas,
+    obtenerTurnosActivos
+} from '../../services/catalogos.service';
+
+import {
+    obtenerIncidencias
+} from '../../services/incidencias.service';
+
+import {
+    obtenerUsuarios
+} from '../../services/usuarios.service';
+
+import useAuth from '../../hooks/useAuth';
+
+const estadosAbiertos = [
+    'nueva',
+    'asignada',
+    'en_proceso'
+];
+
+const estadosResueltos = [
+    'resuelta',
+    'cerrada'
+];
+
+const prioridades = {
+    critica: 'Crítica',
+    alta: 'Alta',
+    media: 'Media',
+    baja: 'Baja'
+};
+
+const estados = {
+    nueva: 'Nueva',
+    asignada: 'Asignada',
+    en_proceso: 'En proceso',
+    resuelta: 'Resuelta',
+    cerrada: 'Cerrada',
+    cancelada: 'Cancelada'
+};
+
+const tipos = {
+    falla_equipo: 'Falla de equipo',
+    falta_material: 'Falta de material',
+    calidad: 'Calidad',
+    seguridad: 'Seguridad',
+    proceso: 'Proceso',
+    otro: 'Otro'
+};
+
+function minutosEntre(inicio, fin) {
+    if (!inicio || !fin) {
+        return null;
+    }
+
+    const inicioMs = new Date(inicio).getTime();
+    const finMs = new Date(fin).getTime();
+
+    if (
+        Number.isNaN(inicioMs) ||
+        Number.isNaN(finMs)
+    ) {
+        return null;
+    }
+
+    return Math.max(
+        0,
+        Math.round((finMs - inicioMs) / 60000)
+    );
+}
+
+function formatearMinutos(minutos) {
+    if (minutos === null || minutos === undefined) {
+        return 'Sin datos';
+    }
+
+    if (minutos < 60) {
+        return `${minutos} min`;
+    }
+
+    const horas = Math.floor(minutos / 60);
+    const resto = minutos % 60;
+
+    return `${horas} h ${resto} min`;
+}
+
+function obtenerFinOperativo(incidencia) {
+    return (
+        incidencia.fecha_cierre ||
+        incidencia.fecha_resolucion ||
+        new Date()
+    );
+}
+
+function calcularTiempoEspera(incidencia) {
+    return minutosEntre(
+        incidencia.fecha_creacion,
+        incidencia.fecha_inicio_atencion ||
+            obtenerFinOperativo(incidencia)
+    );
+}
+
+function calcularTiempoAtencion(incidencia) {
+    if (!incidencia.fecha_inicio_atencion) {
+        return 0;
+    }
+
+    return minutosEntre(
+        incidencia.fecha_inicio_atencion,
+        obtenerFinOperativo(incidencia)
+    );
+}
+
+function calcularTiempoTotal(incidencia) {
+    return minutosEntre(
+        incidencia.fecha_creacion,
+        obtenerFinOperativo(incidencia)
+    );
+}
+
+function formatearFecha(fecha) {
+    if (!fecha) {
+        return 'Sin fecha';
+    }
+
+    const valor = new Date(fecha);
+
+    if (Number.isNaN(valor.getTime())) {
+        return 'Sin fecha';
+    }
+
+    return new Intl.DateTimeFormat('es-MX', {
+        dateStyle: 'medium'
+    }).format(valor);
+}
+
+function formatearHora(fecha) {
+    if (!fecha) {
+        return '--:--';
+    }
+
+    const valor = new Date(fecha);
+
+    if (Number.isNaN(valor.getTime())) {
+        return '--:--';
+    }
+
+    return new Intl.DateTimeFormat('es-MX', {
+        timeStyle: 'short'
+    }).format(valor);
+}
+
+function agruparPor(lista, obtenerClave) {
+    const mapa = new Map();
+
+    lista.forEach((item) => {
+        const clave = obtenerClave(item) || 'Sin dato';
+
+        mapa.set(
+            clave,
+            (mapa.get(clave) || 0) + 1
+        );
+    });
+
+    return Array.from(mapa.entries())
+        .map(([nombre, cantidad]) => ({
+            nombre,
+            cantidad
+        }))
+        .sort((a, b) => b.cantidad - a.cantidad);
+}
+
+function escaparHtml(valor) {
+    return String(valor ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function mismoId(valor, filtro) {
+    if (!filtro) {
+        return true;
+    }
+
+    if (valor === null || valor === undefined || valor === '') {
+        return false;
+    }
+
+    return Number(valor) === Number(filtro);
+}
+
+function ReportesPage() {
+    const {
+        usuario
+    } = useAuth();
+
+    const esAdministrador =
+        usuario?.rol === 'administrador';
+
+    const [incidencias, setIncidencias] = useState([]);
+    const [areas, setAreas] = useState([]);
+    const [lineas, setLineas] = useState([]);
+    const [turnos, setTurnos] = useState([]);
+    const [usuarios, setUsuarios] = useState([]);
+    const [cargando, setCargando] = useState(true);
+    const [error, setError] = useState('');
+    const [orden, setOrden] = useState({
+        campo: 'fecha_creacion',
+        direccion: 'desc'
+    });
+    const [filtrosAbiertos, setFiltrosAbiertos] =
+        useState(false);
+
+    const [filtros, setFiltros] = useState({
+        fecha_inicial: '',
+        fecha_final: '',
+        area_id: '',
+        linea_id: '',
+        responsable_id: '',
+        estado: '',
+        prioridad: '',
+        turno_id: '',
+        usuario_reporta_id: '',
+        tipo: '',
+        buscar: ''
+    });
+
+    const cargarDatos = useCallback(async () => {
+        try {
+            setCargando(true);
+            setError('');
+
+            const [
+                respuestaIncidencias,
+                respuestaAreas,
+                respuestaLineas,
+                respuestaTurnos,
+                respuestaUsuarios
+            ] = await Promise.allSettled([
+                obtenerIncidencias(),
+                obtenerAreasActivas(),
+                obtenerLineasActivas(),
+                obtenerTurnosActivos(),
+                obtenerUsuarios({
+                    activo: true
+                })
+            ]);
+
+            if (
+                respuestaIncidencias.status === 'fulfilled'
+            ) {
+                setIncidencias(
+                    respuestaIncidencias.value.data || []
+                );
+            }
+
+            if (respuestaAreas.status === 'fulfilled') {
+                setAreas(respuestaAreas.value.data || []);
+            }
+
+            if (respuestaLineas.status === 'fulfilled') {
+                setLineas(respuestaLineas.value.data || []);
+            }
+
+            if (respuestaTurnos.status === 'fulfilled') {
+                setTurnos(respuestaTurnos.value.data || []);
+            }
+
+            if (respuestaUsuarios.status === 'fulfilled') {
+                setUsuarios(
+                    respuestaUsuarios.value.data || []
+                );
+            }
+        } catch (errorSolicitud) {
+            console.error(
+                'Error al cargar reportes:',
+                errorSolicitud
+            );
+
+            setError(
+                'No fue posible cargar la información de reportes.'
+            );
+        } finally {
+            setCargando(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        cargarDatos();
+    }, [cargarDatos]);
+
+    function manejarFiltro(evento) {
+        const {
+            name,
+            value
+        } = evento.target;
+
+        setFiltros((actual) => ({
+            ...actual,
+            [name]: value
+        }));
+    }
+
+    const incidenciasFiltradas = useMemo(() => {
+        const texto = filtros.buscar
+            .trim()
+            .toLowerCase();
+
+        return incidencias.filter((incidencia) => {
+            const fecha = incidencia.fecha_creacion
+                ? new Date(incidencia.fecha_creacion)
+                : null;
+
+            if (
+                filtros.fecha_inicial &&
+                fecha &&
+                fecha <
+                    new Date(`${filtros.fecha_inicial}T00:00:00`)
+            ) {
+                return false;
+            }
+
+            if (
+                filtros.fecha_final &&
+                fecha &&
+                fecha >
+                    new Date(`${filtros.fecha_final}T23:59:59`)
+            ) {
+                return false;
+            }
+
+            if (
+                filtros.area_id &&
+                !mismoId(
+                    incidencia.area_responsable_id ||
+                        incidencia.area_destino_id,
+                    filtros.area_id
+                )
+            ) {
+                return false;
+            }
+
+            if (
+                filtros.linea_id &&
+                !mismoId(incidencia.linea_id, filtros.linea_id)
+            ) {
+                return false;
+            }
+
+            if (
+                filtros.responsable_id &&
+                !mismoId(
+                    incidencia.usuario_asignado_id ||
+                        incidencia.responsable_usuario_id,
+                    filtros.responsable_id
+                )
+            ) {
+                return false;
+            }
+
+            if (
+                esAdministrador &&
+                filtros.usuario_reporta_id &&
+                !mismoId(
+                    incidencia.usuario_creador_id,
+                    filtros.usuario_reporta_id
+                )
+            ) {
+                return false;
+            }
+
+            if (
+                filtros.estado &&
+                incidencia.estado !== filtros.estado
+            ) {
+                return false;
+            }
+
+            if (
+                filtros.prioridad &&
+                incidencia.prioridad !== filtros.prioridad
+            ) {
+                return false;
+            }
+
+            if (
+                filtros.turno_id &&
+                !mismoId(incidencia.turno_id, filtros.turno_id)
+            ) {
+                return false;
+            }
+
+            if (
+                filtros.tipo &&
+                incidencia.tipo !== filtros.tipo
+            ) {
+                return false;
+            }
+
+            if (!texto) {
+                return true;
+            }
+
+            return [
+                incidencia.folio,
+                incidencia.titulo,
+                incidencia.descripcion,
+                incidencia.linea_nombre,
+                incidencia.area_nombre,
+                incidencia.responsable_nombre,
+                incidencia.reporta_nombre
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase()
+                .includes(texto);
+        });
+    }, [incidencias, filtros, esAdministrador]);
+
+    const incidenciasOrdenadas = useMemo(() => {
+        const multiplicador =
+            orden.direccion === 'asc' ? 1 : -1;
+
+        return [...incidenciasFiltradas].sort((a, b) => {
+            const obtenerValor = (incidencia) => {
+                if (orden.campo === 'tiempo_total') {
+                    return calcularTiempoTotal(incidencia) || 0;
+                }
+
+                if (orden.campo === 'tiempo_espera') {
+                    return calcularTiempoEspera(incidencia) || 0;
+                }
+
+                if (orden.campo === 'tiempo_atencion') {
+                    return calcularTiempoAtencion(incidencia) || 0;
+                }
+
+                if (orden.campo === 'prioridad') {
+                    return [
+                        'baja',
+                        'media',
+                        'alta',
+                        'critica'
+                    ].indexOf(incidencia.prioridad);
+                }
+
+                return incidencia[orden.campo] || '';
+            };
+
+            const valorA = obtenerValor(a);
+            const valorB = obtenerValor(b);
+
+            if (
+                orden.campo.includes('fecha') ||
+                [
+                    'tiempo_total',
+                    'tiempo_espera',
+                    'tiempo_atencion'
+                ].includes(orden.campo)
+            ) {
+                return (
+                    (new Date(valorA).getTime?.() || valorA) -
+                    (new Date(valorB).getTime?.() || valorB)
+                ) * multiplicador;
+            }
+
+            return String(valorA).localeCompare(
+                String(valorB),
+                'es',
+                {
+                    numeric: true
+                }
+            ) * multiplicador;
+        });
+    }, [incidenciasFiltradas, orden]);
+
+    const kpis = useMemo(() => {
+        const tiempos = incidenciasFiltradas
+            .map((incidencia) =>
+                minutosEntre(
+                    incidencia.fecha_inicio_atencion ||
+                        incidencia.fecha_asignacion ||
+                        incidencia.fecha_creacion,
+                    incidencia.fecha_resolucion ||
+                        incidencia.fecha_cierre
+                )
+            )
+            .filter((valor) => valor !== null);
+
+        const total = incidenciasFiltradas.length;
+        const resueltas = incidenciasFiltradas.filter(
+            (incidencia) =>
+                estadosResueltos.includes(incidencia.estado)
+        ).length;
+
+        const promedio = tiempos.length
+            ? Math.round(
+                tiempos.reduce(
+                    (suma, valor) => suma + valor,
+                    0
+                ) / tiempos.length
+            )
+            : null;
+
+        return {
+            total,
+            abiertas: incidenciasFiltradas.filter(
+                (incidencia) =>
+                    estadosAbiertos.includes(incidencia.estado)
+            ).length,
+            resueltas,
+            promedio,
+            maximo: tiempos.length
+                ? Math.max(...tiempos)
+                : null,
+            minimo: tiempos.length
+                ? Math.min(...tiempos)
+                : null,
+            porcentajeAtendidas: total
+                ? Math.round((resueltas / total) * 100)
+                : 0,
+            criticas: incidenciasFiltradas.filter(
+                (incidencia) =>
+                    incidencia.prioridad === 'critica'
+            ).length
+        };
+    }, [incidenciasFiltradas]);
+
+    const graficas = useMemo(
+        () => ({
+            lineas: agruparPor(
+                incidenciasFiltradas,
+                (incidencia) => incidencia.linea_nombre
+            ).slice(0, 6),
+            areas: agruparPor(
+                incidenciasFiltradas,
+                (incidencia) => incidencia.area_nombre
+            ).slice(0, 6),
+            prioridad: agruparPor(
+                incidenciasFiltradas,
+                (incidencia) =>
+                    prioridades[incidencia.prioridad]
+            ),
+            estado: agruparPor(
+                incidenciasFiltradas,
+                (incidencia) => estados[incidencia.estado]
+            ),
+            responsables: agruparPor(
+                incidenciasFiltradas.filter(
+                    (incidencia) =>
+                        incidencia.responsable_nombre
+                ),
+                (incidencia) =>
+                    incidencia.responsable_nombre
+            ).slice(0, 5)
+        }),
+        [incidenciasFiltradas]
+    );
+
+    function cambiarOrden(campo) {
+        setOrden((actual) => ({
+            campo,
+            direccion:
+                actual.campo === campo &&
+                actual.direccion === 'asc'
+                    ? 'desc'
+                    : 'asc'
+        }));
+    }
+
+    function obtenerNombreCatalogo(lista, id) {
+        return lista.find(
+            (item) => Number(item.id) === Number(id)
+        )?.nombre;
+    }
+
+    function obtenerFiltrosAplicados() {
+        const filtrosAplicados = [
+            filtros.fecha_inicial && [
+                'Fecha inicial',
+                filtros.fecha_inicial
+            ],
+            filtros.fecha_final && [
+                'Fecha final',
+                filtros.fecha_final
+            ],
+            filtros.area_id && [
+                'Area que atiende',
+                obtenerNombreCatalogo(areas, filtros.area_id)
+            ],
+            filtros.linea_id && [
+                'Linea',
+                obtenerNombreCatalogo(lineas, filtros.linea_id)
+            ],
+            filtros.responsable_id && [
+                'Responsable',
+                obtenerNombreCatalogo(usuarios, filtros.responsable_id)
+            ],
+            filtros.estado && [
+                'Estado',
+                estados[filtros.estado]
+            ],
+            filtros.prioridad && [
+                'Prioridad',
+                prioridades[filtros.prioridad]
+            ],
+            filtros.turno_id && [
+                'Turno',
+                obtenerNombreCatalogo(turnos, filtros.turno_id)
+            ],
+            esAdministrador &&
+                filtros.usuario_reporta_id && [
+                    'Usuario que reporto',
+                    obtenerNombreCatalogo(
+                        usuarios,
+                        filtros.usuario_reporta_id
+                    )
+                ],
+            filtros.tipo && [
+                'Tipo',
+                tipos[filtros.tipo]
+            ],
+            filtros.buscar.trim() && [
+                'Busqueda',
+                filtros.buscar.trim()
+            ]
+        ].filter(Boolean);
+
+        if (filtrosAplicados.length === 0) {
+            return [
+                [
+                    'Filtros',
+                    'Sin filtros, se exporta todo'
+                ]
+            ];
+        }
+
+        return filtrosAplicados;
+    }
+
+    function obtenerDatosExportacion() {
+        const encabezados = [
+            'Folio',
+            'Fecha',
+            'Hora',
+            'Linea',
+            'Area que atiende',
+            'Responsable',
+            'Prioridad',
+            'Estado',
+            'Tiempo de espera',
+            'Tiempo atencion',
+            'Tiempo total',
+            'Usuario reporta',
+            'Descripcion'
+        ];
+
+        const filas = incidenciasOrdenadas.map(
+            (incidencia) => [
+                incidencia.folio,
+                formatearFecha(incidencia.fecha_creacion),
+                formatearHora(incidencia.fecha_creacion),
+                incidencia.linea_nombre || '',
+                incidencia.area_nombre || '',
+                incidencia.responsable_nombre || '',
+                prioridades[incidencia.prioridad] ||
+                    incidencia.prioridad,
+                estados[incidencia.estado] ||
+                    incidencia.estado,
+                formatearMinutos(
+                    calcularTiempoEspera(incidencia)
+                ),
+                formatearMinutos(
+                    calcularTiempoAtencion(incidencia)
+                ),
+                formatearMinutos(
+                    calcularTiempoTotal(incidencia)
+                ),
+                incidencia.reporta_nombre || '',
+                incidencia.descripcion || ''
+            ]
+        );
+
+        return {
+            encabezados,
+            filas,
+            filtrosAplicados: obtenerFiltrosAplicados()
+        };
+    }
+
+    function exportarExcel() {
+        const {
+            encabezados,
+            filas,
+            filtrosAplicados
+        } = obtenerDatosExportacion();
+
+        const contenido = [
+            ['Historico de incidencias'],
+            ['Generado', new Date().toLocaleString('es-MX')],
+            ['Resultados', filas.length],
+            [],
+            ['Filtros aplicados'],
+            ...filtrosAplicados,
+            [],
+            encabezados,
+            ...filas
+        ]
+            .map((fila) =>
+                fila
+                    .map((valor) =>
+                        `"${String(valor ?? '').replaceAll('"', '""')}"`
+                    )
+                    .join(',')
+            )
+            .join('\n');
+
+        const blob = new Blob(
+            [
+                '\ufeff',
+                contenido
+            ],
+            {
+                type: 'text/csv;charset=utf-8;'
+            }
+        );
+
+        const url = URL.createObjectURL(blob);
+        const enlace = document.createElement('a');
+
+        enlace.href = url;
+        enlace.download = `historico-incidencias-${new Date().toISOString().slice(0, 10)}.csv`;
+        enlace.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function exportarPdf() {
+        const {
+            encabezados,
+            filas,
+            filtrosAplicados
+        } = obtenerDatosExportacion();
+
+        const ventana = window.open('', '_blank');
+
+        if (!ventana) {
+            window.alert(
+                'No fue posible abrir la ventana de impresion. Revisa el bloqueo de ventanas emergentes.'
+            );
+            return;
+        }
+
+        const filtrosHtml = filtrosAplicados
+            .map(
+                ([etiqueta, valor]) => `
+                    <div>
+                        <strong>${escaparHtml(etiqueta)}:</strong>
+                        ${escaparHtml(valor || 'Sin dato')}
+                    </div>
+                `
+            )
+            .join('');
+
+        const encabezadosHtml = encabezados
+            .map(
+                (encabezado) =>
+                    `<th>${escaparHtml(encabezado)}</th>`
+            )
+            .join('');
+
+        const filasHtml = filas.length
+            ? filas
+                .map(
+                    (fila) => `
+                        <tr>
+                            ${fila
+                                .map(
+                                    (valor) =>
+                                        `<td>${escaparHtml(valor)}</td>`
+                                )
+                                .join('')}
+                        </tr>
+                    `
+                )
+                .join('')
+            : `<tr><td colspan="${encabezados.length}">Sin resultados.</td></tr>`;
+
+        ventana.document.write(`
+            <!doctype html>
+            <html lang="es">
+                <head>
+                    <meta charset="utf-8" />
+                    <title>Historico de incidencias</title>
+                    <style>
+                        body {
+                            color: #0f172a;
+                            font-family: Arial, sans-serif;
+                            margin: 24px;
+                        }
+
+                        h1 {
+                            font-size: 22px;
+                            margin: 0 0 6px;
+                        }
+
+                        .meta {
+                            color: #475569;
+                            font-size: 12px;
+                            margin-bottom: 18px;
+                        }
+
+                        .filters {
+                            border: 1px solid #e2e8f0;
+                            display: grid;
+                            font-size: 12px;
+                            gap: 6px 18px;
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                            margin-bottom: 18px;
+                            padding: 12px;
+                        }
+
+                        table {
+                            border-collapse: collapse;
+                            font-size: 11px;
+                            width: 100%;
+                        }
+
+                        th,
+                        td {
+                            border: 1px solid #e2e8f0;
+                            padding: 6px;
+                            text-align: left;
+                            vertical-align: top;
+                        }
+
+                        th {
+                            background: #f8fafc;
+                            font-weight: 700;
+                        }
+
+                        @page {
+                            margin: 14mm;
+                            size: landscape;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1>Historico de incidencias</h1>
+                    <div class="meta">
+                        Generado: ${escaparHtml(new Date().toLocaleString('es-MX'))}
+                        · Resultados: ${filas.length}
+                    </div>
+                    <section class="filters">
+                        ${filtrosHtml}
+                    </section>
+                    <table>
+                        <thead>
+                            <tr>${encabezadosHtml}</tr>
+                        </thead>
+                        <tbody>${filasHtml}</tbody>
+                    </table>
+                </body>
+            </html>
+        `);
+        ventana.document.close();
+        ventana.focus();
+        ventana.print();
+    }
+
+    return (
+        <div className="mx-auto max-w-[1800px] space-y-6">
+
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <button
+                    type="button"
+                    onClick={() =>
+                        setFiltrosAbiertos((abierto) => !abierto)
+                    }
+                    className="flex w-full items-center justify-between gap-3 text-left font-bold text-slate-950"
+                    aria-expanded={filtrosAbiertos}
+                >
+                    <span className="flex items-center gap-2">
+                        <Filter
+                            size={18}
+                            className="text-emerald-700"
+                        />
+                        Filtros
+                    </span>
+
+                    <ChevronDown
+                        size={20}
+                        className={[
+                            'text-slate-500 transition-transform',
+                            filtrosAbiertos ? 'rotate-180' : ''
+                        ].join(' ')}
+                    />
+                </button>
+
+                {filtrosAbiertos && (
+                    <div className="mt-4 space-y-4">
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                            <input
+                                type="date"
+                                name="fecha_inicial"
+                                value={filtros.fecha_inicial}
+                                onChange={manejarFiltro}
+                                className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                            />
+
+                            <input
+                                type="date"
+                                name="fecha_final"
+                                value={filtros.fecha_final}
+                                onChange={manejarFiltro}
+                                className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                            />
+
+                            <Select
+                                name="area_id"
+                                value={filtros.area_id}
+                                onChange={manejarFiltro}
+                                placeholder="Área que atiende"
+                                opciones={areas}
+                            />
+
+                            <Select
+                                name="linea_id"
+                                value={filtros.linea_id}
+                                onChange={manejarFiltro}
+                                placeholder="Línea"
+                                opciones={lineas}
+                            />
+
+                            <Select
+                                name="responsable_id"
+                                value={filtros.responsable_id}
+                                onChange={manejarFiltro}
+                                placeholder="Responsable"
+                                opciones={usuarios}
+                            />
+
+                            <SelectSimple
+                                name="estado"
+                                value={filtros.estado}
+                                onChange={manejarFiltro}
+                                placeholder="Estado"
+                                opciones={estados}
+                            />
+
+                            <SelectSimple
+                                name="prioridad"
+                                value={filtros.prioridad}
+                                onChange={manejarFiltro}
+                                placeholder="Prioridad"
+                                opciones={prioridades}
+                            />
+
+                            <Select
+                                name="turno_id"
+                                value={filtros.turno_id}
+                                onChange={manejarFiltro}
+                                placeholder="Turno"
+                                opciones={turnos}
+                            />
+
+                            {esAdministrador && (
+                                <Select
+                                    name="usuario_reporta_id"
+                                    value={filtros.usuario_reporta_id}
+                                    onChange={manejarFiltro}
+                                    placeholder="Usuario que reportó"
+                                    opciones={usuarios}
+                                />
+                            )}
+
+                            <SelectSimple
+                                name="tipo"
+                                value={filtros.tipo}
+                                onChange={manejarFiltro}
+                                placeholder="Tipo"
+                                opciones={tipos}
+                            />
+
+                            <div className="relative md:col-span-2 xl:col-span-5">
+                                <Search
+                                    size={18}
+                                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                                />
+
+                                <input
+                                    name="buscar"
+                                    value={filtros.buscar}
+                                    onChange={manejarFiltro}
+                                    placeholder="Buscar por folio, título, descripción, área, línea o responsable..."
+                                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-12 pr-4 outline-none focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                            <button
+                                type="button"
+                                onClick={exportarExcel}
+                                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-600 px-4 font-bold text-emerald-700 transition hover:bg-emerald-50"
+                            >
+                                <Download size={18} />
+                                Exportar Excel
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={exportarPdf}
+                                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 font-bold text-white transition hover:bg-slate-800"
+                            >
+                                <Printer size={18} />
+                                Exportar PDF
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+            </section>
+
+            {error && (
+                <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+                    {error}
+                </section>
+            )}
+
+            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
+                <Kpi titulo="Registradas" valor={kpis.total} icono={FileDown} />
+                <Kpi titulo="Abiertas" valor={kpis.abiertas} icono={AlertTriangle} tono="amber" />
+                <Kpi titulo="Resueltas" valor={kpis.resueltas} icono={Trophy} tono="emerald" />
+                <Kpi titulo="Tiempo promedio" valor={formatearMinutos(kpis.promedio)} icono={Clock3} tono="blue" />
+                <Kpi titulo="Tiempo máximo" valor={formatearMinutos(kpis.maximo)} icono={Clock3} tono="red" />
+                <Kpi titulo="Tiempo mínimo" valor={formatearMinutos(kpis.minimo)} icono={Clock3} />
+                <Kpi titulo="% atendidas" valor={`${kpis.porcentajeAtendidas}%`} icono={Trophy} tono="emerald" />
+                <Kpi titulo="Críticas" valor={kpis.criticas} icono={AlertTriangle} tono="red" />
+            </section>
+
+            <section className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-4">
+                <GraficaBarras titulo="Incidencias por línea" datos={graficas.lineas} />
+                <GraficaBarras titulo="Incidencias por área que atiende" datos={graficas.areas} />
+                <GraficaDistribucion titulo="Prioridad" datos={graficas.prioridad} />
+                <GraficaDistribucion titulo="Estado" datos={graficas.estado} />
+            </section>
+
+            <section className="grid gap-4 xl:grid-cols-[0.7fr_1.3fr]">
+                <Ranking
+                    titulo="Top responsables"
+                    datos={graficas.responsables}
+                />
+
+                <Tabla
+                    incidencias={incidenciasOrdenadas}
+                    cargando={cargando}
+                    orden={orden}
+                    cambiarOrden={cambiarOrden}
+                />
+            </section>
+        </div>
+    );
+}
+
+function Select({
+    name,
+    value,
+    onChange,
+    placeholder,
+    opciones
+}) {
+    return (
+        <select
+            name={name}
+            value={value}
+            onChange={onChange}
+            className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+        >
+            <option value="">{placeholder}</option>
+            {opciones.map((opcion) => (
+                <option key={opcion.id} value={opcion.id}>
+                    {opcion.nombre}
+                </option>
+            ))}
+        </select>
+    );
+}
+
+function SelectSimple({
+    name,
+    value,
+    onChange,
+    placeholder,
+    opciones
+}) {
+    return (
+        <select
+            name={name}
+            value={value}
+            onChange={onChange}
+            className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+        >
+            <option value="">{placeholder}</option>
+            {Object.entries(opciones).map(([clave, etiqueta]) => (
+                <option key={clave} value={clave}>
+                    {etiqueta}
+                </option>
+            ))}
+        </select>
+    );
+}
+
+function Kpi({
+    titulo,
+    valor,
+    icono: Icono,
+    tono = 'slate'
+}) {
+    const tonos = {
+        slate: 'bg-slate-100 text-slate-700',
+        emerald: 'bg-emerald-50 text-emerald-700',
+        amber: 'bg-amber-50 text-amber-700',
+        blue: 'bg-blue-50 text-blue-700',
+        red: 'bg-red-50 text-red-700'
+    };
+
+    return (
+        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+                <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${tonos[tono]}`}>
+                    <Icono size={18} />
+                </div>
+
+                <div className="min-w-0">
+                    <p className="truncate text-xs font-bold uppercase text-slate-400">
+                        {titulo}
+                    </p>
+
+                    <p className="mt-1 truncate text-2xl font-bold text-slate-950">
+                        {valor}
+                    </p>
+                </div>
+            </div>
+        </article>
+    );
+}
+
+function GraficaBarras({
+    titulo,
+    datos
+}) {
+    const maximo = datos[0]?.cantidad || 1;
+
+    return (
+        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="font-bold text-slate-950">{titulo}</h3>
+            <div className="mt-4 space-y-3">
+                {datos.length === 0 ? (
+                    <p className="text-sm text-slate-500">Sin datos.</p>
+                ) : datos.map((item) => (
+                    <div key={item.nombre}>
+                        <div className="flex justify-between gap-4 text-sm">
+                            <span className="truncate font-semibold text-slate-700">
+                                {item.nombre}
+                            </span>
+                            <span className="font-bold text-slate-950">
+                                {item.cantidad}
+                            </span>
+                        </div>
+                        <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                                className="h-full rounded-full bg-emerald-600"
+                                style={{
+                                    width: `${Math.max(8, (item.cantidad / maximo) * 100)}%`
+                                }}
+                            />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </article>
+    );
+}
+
+function GraficaDistribucion({
+    titulo,
+    datos
+}) {
+    const total = datos.reduce(
+        (suma, item) => suma + item.cantidad,
+        0
+    );
+
+    return (
+        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="font-bold text-slate-950">{titulo}</h3>
+            <div className="mt-4 grid gap-4 sm:grid-cols-[112px_1fr] sm:items-center">
+                <div
+                    className="mx-auto grid h-28 w-28 place-items-center rounded-full"
+                    style={{
+                        background:
+                            'conic-gradient(#059669 0 35%, #f59e0b 35% 62%, #ef4444 62% 80%, #3b82f6 80% 100%)'
+                    }}
+                >
+                    <div className="grid h-20 w-20 place-items-center rounded-full bg-white">
+                        <span className="text-xl font-bold text-slate-950">
+                            {total}
+                        </span>
+                    </div>
+                </div>
+                <div className="space-y-2.5">
+                    {datos.length === 0 ? (
+                        <p className="text-sm text-slate-500">Sin datos.</p>
+                    ) : datos.map((item) => (
+                        <div
+                            key={item.nombre}
+                            className="flex items-center justify-between gap-4 text-sm"
+                        >
+                            <span className="truncate font-semibold text-slate-700">
+                                {item.nombre}
+                            </span>
+                            <span className="font-bold text-slate-950">
+                                {item.cantidad}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </article>
+    );
+}
+
+function Ranking({
+    titulo,
+    datos
+}) {
+    return (
+        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="font-bold text-slate-950">{titulo}</h3>
+            <div className="mt-4 space-y-2">
+                {datos.length === 0 ? (
+                    <p className="text-sm text-slate-500">Sin datos.</p>
+                ) : datos.map((item, indice) => (
+                    <div
+                        key={item.nombre}
+                            className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5"
+                    >
+                        <div className="flex min-w-0 items-center gap-3">
+                            <span className="grid h-7 w-7 place-items-center rounded-lg bg-white text-xs font-bold text-slate-600">
+                                {indice + 1}
+                            </span>
+                            <span className="truncate font-semibold text-slate-800">
+                                {item.nombre}
+                            </span>
+                        </div>
+                        <span className="font-bold text-slate-950">
+                            {item.cantidad}
+                        </span>
+                    </div>
+                ))}
+            </div>
+        </article>
+    );
+}
+
+function Tabla({
+    incidencias,
+    cargando,
+    orden,
+    cambiarOrden
+}) {
+    const encabezados = [
+        ['folio', 'Folio'],
+        ['fecha_creacion', 'Fecha'],
+        ['linea_nombre', 'Línea'],
+        ['area_nombre', 'Área que atiende'],
+        ['reporta_nombre', 'Reportó'],
+        ['responsable_nombre', 'Responsable'],
+        ['prioridad', 'Prioridad'],
+        ['estado', 'Estado'],
+        ['tiempo_espera', 'Tiempo Espera'],
+        ['tiempo_atencion', 'Tiempo Atención'],
+        ['tiempo_total', 'Tiempo Total']
+    ];
+
+    return (
+        <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
+                <h3 className="font-bold text-slate-950">
+                    Tabla de resultados
+                </h3>
+                <p className="text-sm text-slate-500">
+                    {incidencias.length} resultado(s)
+                </p>
+            </div>
+
+            <div className="custom-scrollbar overflow-x-auto">
+                <table className="w-full min-w-[1120px] text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                        <tr>
+                            {encabezados.map(([campo, etiqueta]) => (
+                                <th key={campo} className="px-4 py-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => cambiarOrden(campo)}
+                                        className="font-bold"
+                                    >
+                                        {etiqueta}
+                                        {orden.campo === campo
+                                            ? orden.direccion === 'asc'
+                                                ? ' ↑'
+                                                : ' ↓'
+                                            : ''}
+                                    </button>
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {cargando ? (
+                            <tr>
+                                <td colSpan={11} className="px-4 py-10 text-center text-slate-500">
+                                    Cargando reportes...
+                                </td>
+                            </tr>
+                        ) : incidencias.length === 0 ? (
+                            <tr>
+                                <td colSpan={11} className="px-4 py-10 text-center text-slate-500">
+                                    No hay incidencias con los filtros seleccionados.
+                                </td>
+                            </tr>
+                        ) : incidencias.map((incidencia) => (
+                            <tr key={incidencia.id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 font-bold text-emerald-700">
+                                    {incidencia.folio}
+                                </td>
+                                <td className="px-4 py-3">
+                                    {formatearFecha(incidencia.fecha_creacion)}
+                                </td>
+                                <td className="px-4 py-3">
+                                    {incidencia.linea_nombre || 'Sin línea'}
+                                </td>
+                                <td className="px-4 py-3">
+                                    {incidencia.area_nombre || 'Sin área'}
+                                </td>
+                                <td className="px-4 py-3">
+                                    {incidencia.reporta_nombre || 'Sin usuario'}
+                                </td>
+                                <td className="px-4 py-3">
+                                    {incidencia.responsable_nombre || 'Sin responsable'}
+                                </td>
+                                <td className="px-4 py-3">
+                                    {prioridades[incidencia.prioridad] || incidencia.prioridad}
+                                </td>
+                                <td className="px-4 py-3">
+                                    {estados[incidencia.estado] || incidencia.estado}
+                                </td>
+                                <td className="px-4 py-3 font-semibold">
+                                    {formatearMinutos(
+                                        calcularTiempoEspera(incidencia)
+                                    )}
+                                </td>
+                                <td className="px-4 py-3 font-semibold">
+                                    {formatearMinutos(
+                                        calcularTiempoAtencion(incidencia)
+                                    )}
+                                </td>
+                                <td className="px-4 py-3 font-semibold">
+                                    {formatearMinutos(
+                                        calcularTiempoTotal(incidencia)
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </article>
+    );
+}
+
+export default ReportesPage;

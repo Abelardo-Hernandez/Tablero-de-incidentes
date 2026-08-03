@@ -10,6 +10,20 @@ function convertirBooleanos(usuario) {
     };
 }
 
+function normalizarCorreo(correo) {
+    return correo
+        ? correo.trim().toLowerCase()
+        : null;
+}
+
+function correoValido(correo) {
+    if (!correo) {
+        return true;
+    }
+
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo);
+}
+
 async function validarAreaYLinea({
     rol,
     areaId,
@@ -136,6 +150,7 @@ async function obtenerUsuarios(req, res) {
                 (
                     u.nombre LIKE ?
                     OR u.usuario LIKE ?
+                    OR u.correo LIKE ?
                     OR a.nombre LIKE ?
                     OR l.nombre LIKE ?
                 )
@@ -144,6 +159,7 @@ async function obtenerUsuarios(req, res) {
             const termino = `%${buscar.trim()}%`;
 
             valores.push(
+                termino,
                 termino,
                 termino,
                 termino,
@@ -161,6 +177,7 @@ async function obtenerUsuarios(req, res) {
                 u.id,
                 u.nombre,
                 u.usuario,
+                u.correo,
                 u.rol,
                 u.area_id,
                 u.linea_id,
@@ -206,6 +223,7 @@ async function obtenerUsuarioPorId(req, res) {
                 u.id,
                 u.nombre,
                 u.usuario,
+                u.correo,
                 u.rol,
                 u.area_id,
                 u.linea_id,
@@ -251,6 +269,7 @@ async function crearUsuario(req, res) {
         const {
             nombre,
             usuario,
+            correo,
             password,
             rol = 'usuario',
             area_id,
@@ -281,21 +300,34 @@ async function crearUsuario(req, res) {
         }
 
         const usuarioNormalizado = usuario.trim().toLowerCase();
+        const correoNormalizado = normalizarCorreo(correo);
+
+        if (!correoValido(correoNormalizado)) {
+            return res.status(400).json({
+                success: false,
+                message: 'El correo no tiene un formato válido'
+            });
+        }
 
         const [existentes] = await db.query(
             `
             SELECT id
             FROM usuarios
             WHERE usuario = ?
+              OR (? IS NOT NULL AND correo = ?)
             LIMIT 1
             `,
-            [usuarioNormalizado]
+            [
+                usuarioNormalizado,
+                correoNormalizado,
+                correoNormalizado
+            ]
         );
 
         if (existentes.length > 0) {
             return res.status(409).json({
                 success: false,
-                message: 'El nombre de usuario ya está registrado'
+                message: 'El usuario o correo ya está registrado'
             });
         }
 
@@ -319,6 +351,7 @@ async function crearUsuario(req, res) {
             INSERT INTO usuarios (
                 nombre,
                 usuario,
+                correo,
                 password,
                 rol,
                 area_id,
@@ -326,11 +359,12 @@ async function crearUsuario(req, res) {
                 es_lider,
                 activo
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
             [
                 nombre.trim(),
                 usuarioNormalizado,
+                correoNormalizado,
                 passwordHash,
                 rol,
                 validacion.areaId,
@@ -364,6 +398,7 @@ async function actualizarUsuario(req, res) {
         const {
             nombre,
             usuario,
+            correo,
             rol,
             area_id,
             linea_id,
@@ -377,6 +412,7 @@ async function actualizarUsuario(req, res) {
                 id,
                 nombre,
                 usuario,
+                correo,
                 rol,
                 area_id,
                 linea_id,
@@ -402,7 +438,17 @@ async function actualizarUsuario(req, res) {
         const nuevoUsuario = usuario
             ? usuario.trim().toLowerCase()
             : actual.usuario;
+        const nuevoCorreo = correo !== undefined
+            ? normalizarCorreo(correo)
+            : actual.correo;
         const nuevoRol = rol || actual.rol;
+
+        if (!correoValido(nuevoCorreo)) {
+            return res.status(400).json({
+                success: false,
+                message: 'El correo no tiene un formato válido'
+            });
+        }
 
         const nuevaAreaId = area_id !== undefined
             ? area_id || null
@@ -431,17 +477,25 @@ async function actualizarUsuario(req, res) {
             `
             SELECT id
             FROM usuarios
-            WHERE usuario = ?
+            WHERE (
+                usuario = ?
+                OR (? IS NOT NULL AND correo = ?)
+            )
               AND id <> ?
             LIMIT 1
             `,
-            [nuevoUsuario, id]
+            [
+                nuevoUsuario,
+                nuevoCorreo,
+                nuevoCorreo,
+                id
+            ]
         );
 
         if (duplicados.length > 0) {
             return res.status(409).json({
                 success: false,
-                message: 'El nombre de usuario ya está registrado'
+                message: 'El usuario o correo ya está registrado'
             });
         }
 
@@ -474,6 +528,7 @@ async function actualizarUsuario(req, res) {
             SET
                 nombre = ?,
                 usuario = ?,
+                correo = ?,
                 rol = ?,
                 area_id = ?,
                 linea_id = ?,
@@ -484,6 +539,7 @@ async function actualizarUsuario(req, res) {
             [
                 nuevoNombre,
                 nuevoUsuario,
+                nuevoCorreo,
                 nuevoRol,
                 validacion.areaId,
                 validacion.lineaId,

@@ -1,5 +1,9 @@
 const db = require('../config/db');
 
+const {
+    enviarCorreo
+} = require('../services/correo.service');
+
 const ESTADOS = [
     'nueva',
     'asignada',
@@ -8,6 +12,41 @@ const ESTADOS = [
     'cerrada',
     'cancelada'
 ];
+
+const TRANSICIONES_ESTADO = {
+    nueva: [
+        'cancelada'
+    ],
+    asignada: [
+        'en_proceso',
+        'cancelada'
+    ],
+    en_proceso: [
+        'resuelta',
+        'cancelada'
+    ],
+    resuelta: [
+        'cerrada'
+    ],
+    cerrada: [],
+    cancelada: []
+};
+
+const ETIQUETAS_ESTADO = {
+    nueva: 'Nueva',
+    asignada: 'Asignada',
+    en_proceso: 'En proceso',
+    resuelta: 'Resuelta',
+    cerrada: 'Cerrada',
+    cancelada: 'Cancelada'
+};
+
+const ACCIONES_ESTADO = {
+    en_proceso: 'Atencion iniciada',
+    resuelta: 'Incidencia resuelta',
+    cerrada: 'Incidencia cerrada',
+    cancelada: 'Incidencia cancelada'
+};
 
 const TIPOS = [
     'falla_equipo',
@@ -24,6 +63,22 @@ const PRIORIDADES = [
     'alta',
     'critica'
 ];
+
+const ETIQUETAS_PRIORIDAD = {
+    baja: 'Baja',
+    media: 'Media',
+    alta: 'Alta',
+    critica: 'Crítica'
+};
+
+function escaparHtml(valor) {
+    return String(valor || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
 function convertirIncidencia(incidencia) {
     return {
@@ -47,6 +102,22 @@ async function registrarHistorial({
     estadoNuevo = null,
     comentario = null
 }) {
+    const acciones = {
+        'Incidencia creada': 'creacion',
+        'Incidencia asignada': 'asignacion_usuario',
+        'Atencion iniciada': 'cambio_estado',
+        'Incidencia resuelta': 'resolucion',
+        'Incidencia cerrada': 'cierre',
+        'Incidencia cancelada': 'cancelacion',
+        'Comentario agregado': 'comentario'
+    };
+    const accionHistorial =
+        acciones[accion] || 'otro';
+    const campoModificado =
+        estadoAnterior !== null || estadoNuevo !== null
+            ? 'estado'
+            : null;
+
     try {
         await db.query(
             `
@@ -54,16 +125,18 @@ async function registrarHistorial({
                 incidencia_id,
                 usuario_id,
                 accion,
-                estado_anterior,
-                estado_nuevo,
+                campo_modificado,
+                valor_anterior,
+                valor_nuevo,
                 comentario
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             `,
             [
                 incidenciaId,
                 usuarioId,
-                accion,
+                accionHistorial,
+                campoModificado,
                 estadoAnterior,
                 estadoNuevo,
                 comentario
@@ -84,8 +157,9 @@ async function obtenerHistorialSeguro(incidenciaId) {
             SELECT
                 h.id,
                 h.accion,
-                h.estado_anterior,
-                h.estado_nuevo,
+                h.valor_anterior AS estado_anterior,
+                h.valor_nuevo AS estado_nuevo,
+                h.campo_modificado,
                 h.comentario,
                 h.fecha_creacion,
                 u.nombre AS usuario_nombre
@@ -104,6 +178,135 @@ async function obtenerHistorialSeguro(incidenciaId) {
     }
 }
 
+async function notificarLiderAreaNuevaIncidencia({
+    incidenciaId,
+    titulo,
+    descripcion,
+    prioridad,
+    areaResponsableId,
+    areaOrigenId,
+    lineaId,
+    turnoId
+}) {
+    try {
+        const [destinatarios] = await db.query(
+            `
+            SELECT
+                u.nombre,
+                u.correo,
+                a.nombre AS area_nombre
+            FROM usuarios u
+            INNER JOIN areas a
+                ON a.id = u.area_id
+            WHERE u.area_id = ?
+              AND u.es_lider = 1
+              AND u.activo = 1
+              AND u.correo IS NOT NULL
+              AND u.correo <> ''
+            ORDER BY u.nombre ASC
+            LIMIT 1
+            `,
+            [areaResponsableId]
+        );
+
+        if (destinatarios.length === 0) {
+            console.warn(
+                `Correo no enviado para incidencia ${incidenciaId}: el área responsable no tiene líder activo con correo.`
+            );
+            return;
+        }
+
+        const [contexto] = await db.query(
+            `
+            SELECT
+                origen.nombre AS area_origen,
+                linea.nombre AS linea_nombre,
+                turno.nombre AS turno_nombre
+            FROM areas origen
+            LEFT JOIN lineas linea
+                ON linea.id = ?
+            LEFT JOIN turnos turno
+                ON turno.id = ?
+            WHERE origen.id = ?
+            LIMIT 1
+            `,
+            [
+                lineaId || null,
+                turnoId || null,
+                areaOrigenId
+            ]
+        );
+
+        const destinatario = destinatarios[0];
+        const datosContexto = contexto[0] || {};
+        const folio = `INC-${String(incidenciaId).padStart(6, '0')}`;
+        const prioridadEtiqueta =
+            ETIQUETAS_PRIORIDAD[prioridad] || prioridad;
+        const htmlSeguro = {
+            nombre: escaparHtml(destinatario.nombre),
+            area: escaparHtml(destinatario.area_nombre),
+            folio: escaparHtml(folio),
+            titulo: escaparHtml(titulo),
+            prioridad: escaparHtml(prioridadEtiqueta),
+            areaOrigen: escaparHtml(
+                datosContexto.area_origen || 'No registrada'
+            ),
+            linea: escaparHtml(
+                datosContexto.linea_nombre || 'No aplica'
+            ),
+            turno: escaparHtml(
+                datosContexto.turno_nombre || 'No aplica'
+            ),
+            descripcion: escaparHtml(descripcion).replace(
+                /\n/g,
+                '<br>'
+            )
+        };
+
+        await enviarCorreo({
+            para: destinatario.correo,
+            asunto: `${folio} - Nueva incidencia para ${destinatario.area_nombre}`,
+            texto: [
+                `Hola ${destinatario.nombre},`,
+                '',
+                `Se registró una nueva incidencia para el área ${destinatario.area_nombre}.`,
+                '',
+                `Folio: ${folio}`,
+                `Título: ${titulo}`,
+                `Prioridad: ${prioridadEtiqueta}`,
+                `Área que reporta: ${datosContexto.area_origen || 'No registrada'}`,
+                `Línea: ${datosContexto.linea_nombre || 'No aplica'}`,
+                `Turno: ${datosContexto.turno_nombre || 'No aplica'}`,
+                '',
+                descripcion,
+                '',
+                'Ingresa al sistema para revisar y asignar la atención.'
+            ].join('\n'),
+            html: `
+                <div style="font-family: Arial, sans-serif; color: #172033; line-height: 1.5;">
+                    <h2 style="margin: 0 0 12px;">Nueva incidencia asignada al área</h2>
+                    <p>Hola <strong>${htmlSeguro.nombre}</strong>, se registró una nueva incidencia para <strong>${htmlSeguro.area}</strong>.</p>
+                    <table style="border-collapse: collapse; margin-top: 16px;">
+                        <tr><td style="padding: 6px 12px 6px 0; color: #64748b;">Folio</td><td style="padding: 6px 0;"><strong>${htmlSeguro.folio}</strong></td></tr>
+                        <tr><td style="padding: 6px 12px 6px 0; color: #64748b;">Título</td><td style="padding: 6px 0;">${htmlSeguro.titulo}</td></tr>
+                        <tr><td style="padding: 6px 12px 6px 0; color: #64748b;">Prioridad</td><td style="padding: 6px 0;">${htmlSeguro.prioridad}</td></tr>
+                        <tr><td style="padding: 6px 12px 6px 0; color: #64748b;">Área que reporta</td><td style="padding: 6px 0;">${htmlSeguro.areaOrigen}</td></tr>
+                        <tr><td style="padding: 6px 12px 6px 0; color: #64748b;">Línea</td><td style="padding: 6px 0;">${htmlSeguro.linea}</td></tr>
+                        <tr><td style="padding: 6px 12px 6px 0; color: #64748b;">Turno</td><td style="padding: 6px 0;">${htmlSeguro.turno}</td></tr>
+                    </table>
+                    <p style="margin-top: 16px;"><strong>Descripción:</strong><br>${htmlSeguro.descripcion}</p>
+                    <p style="margin-top: 18px;">Ingresa al sistema para revisar y asignar la atención.</p>
+                </div>
+            `
+        });
+    } catch (error) {
+        console.warn(
+            'No fue posible enviar correo de nueva incidencia:',
+            error.message
+        );
+    }
+}
+
 async function obtenerComentariosSeguro(incidenciaId) {
     try {
         const [comentarios] = await db.query(
@@ -113,7 +316,7 @@ async function obtenerComentariosSeguro(incidenciaId) {
                 c.comentario,
                 c.fecha_creacion,
                 u.nombre AS usuario_nombre
-            FROM comentarios_incidencia c
+            FROM comentarios_incidencias c
             LEFT JOIN usuarios u
                 ON u.id = c.usuario_id
             WHERE c.incidencia_id = ?
@@ -138,6 +341,20 @@ function validarTipo(tipo) {
 
 function validarEstado(estado) {
     return ESTADOS.includes(estado);
+}
+
+function validarTransicionEstado(estadoAnterior, estadoNuevo) {
+    if (estadoAnterior === estadoNuevo) {
+        return `La incidencia ya esta en estado ${ETIQUETAS_ESTADO[estadoNuevo]}.`;
+    }
+
+    if (
+        !TRANSICIONES_ESTADO[estadoAnterior]?.includes(estadoNuevo)
+    ) {
+        return `No se puede cambiar de ${ETIQUETAS_ESTADO[estadoAnterior]} a ${ETIQUETAS_ESTADO[estadoNuevo]}.`;
+    }
+
+    return '';
 }
 
 async function obtenerIncidencias(req, res) {
@@ -233,6 +450,7 @@ async function obtenerIncidencias(req, res) {
                 i.area_responsable_id,
                 i.usuario_asignado_id,
                 i.linea_id,
+                i.turno_id,
                 reporta.nombre AS reporta_nombre,
                 origen.nombre AS area_origen_nombre,
                 a.nombre AS area_nombre,
@@ -271,6 +489,70 @@ async function obtenerIncidencias(req, res) {
         return res.status(500).json({
             success: false,
             message: 'No fue posible obtener las incidencias'
+        });
+    }
+}
+
+async function obtenerResponsables(req, res) {
+    try {
+        const condiciones = [
+            'u.activo = 1'
+        ];
+        const valores = [];
+
+        if (req.user.rol !== 'administrador') {
+            if (!req.user.area_id) {
+                return res.json({
+                    success: true,
+                    data: []
+                });
+            }
+
+            condiciones.push('u.area_id = ?');
+            valores.push(req.user.area_id);
+        }
+
+        const [usuarios] = await db.query(
+            `
+            SELECT
+                u.id,
+                u.nombre,
+                u.usuario,
+                u.correo,
+                u.rol,
+                u.area_id,
+                u.linea_id,
+                u.es_lider,
+                u.activo,
+                a.nombre AS area_nombre,
+                l.nombre AS linea_nombre
+            FROM usuarios u
+            LEFT JOIN areas a
+                ON a.id = u.area_id
+            LEFT JOIN lineas l
+                ON l.id = u.linea_id
+            WHERE ${condiciones.join(' AND ')}
+            ORDER BY
+                u.es_lider DESC,
+                u.nombre ASC
+            `,
+            valores
+        );
+
+        return res.json({
+            success: true,
+            data: usuarios.map((usuario) => ({
+                ...usuario,
+                es_lider: Boolean(usuario.es_lider),
+                activo: Boolean(usuario.activo)
+            }))
+        });
+    } catch (error) {
+        console.error('Error al obtener responsables:', error);
+
+        return res.status(500).json({
+            success: false,
+            message: 'No fue posible obtener los responsables'
         });
     }
 }
@@ -376,19 +658,21 @@ async function crearIncidencia(req, res) {
             area_responsable_id || area_destino_id;
 
         const areaOrigenId =
-            area_origen_id || req.user.area_id;
+            req.user.rol === 'administrador'
+                ? area_origen_id || req.user.area_id
+                : req.user.area_id;
 
         if (!areaOrigenId) {
             return res.status(400).json({
                 success: false,
-                message: 'Debes seleccionar el área origen'
+                message: 'Debes seleccionar el área que reporta'
             });
         }
 
         if (!areaResponsableId) {
             return res.status(400).json({
                 success: false,
-                message: 'Debes seleccionar el área responsable'
+                message: 'Debes seleccionar el área que atiende'
             });
         }
 
@@ -449,6 +733,22 @@ async function crearIncidencia(req, res) {
             estadoNuevo: 'nueva'
         });
 
+        notificarLiderAreaNuevaIncidencia({
+            incidenciaId: id,
+            titulo: titulo.trim(),
+            descripcion: descripcion.trim(),
+            prioridad,
+            areaResponsableId,
+            areaOrigenId,
+            lineaId: linea_id || null,
+            turnoId: turno_id || null
+        }).catch((error) => {
+            console.warn(
+                'No fue posible iniciar notificación por correo:',
+                error.message
+            );
+        });
+
         return res.status(201).json({
             success: true,
             message: 'Incidencia creada correctamente',
@@ -481,7 +781,7 @@ async function asignarIncidencia(req, res) {
 
         const [incidencias] = await db.query(
             `
-            SELECT id, estado
+            SELECT id, estado, fecha_inicio_atencion, area_responsable_id
             FROM incidencias
             WHERE id = ?
             LIMIT 1
@@ -497,17 +797,85 @@ async function asignarIncidencia(req, res) {
         }
 
         const estadoAnterior = incidencias[0].estado;
+        const areaResponsableId =
+            incidencias[0].area_responsable_id;
+        const estadosNoAsignables = [
+            'resuelta',
+            'cerrada',
+            'cancelada'
+        ];
+
+        if (estadosNoAsignables.includes(estadoAnterior)) {
+            return res.status(400).json({
+                success: false,
+                message: 'No se puede asignar una incidencia resuelta, cerrada o cancelada'
+            });
+        }
+
+        const [responsables] = await db.query(
+            `
+            SELECT id, nombre, area_id, activo
+            FROM usuarios
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [responsable_usuario_id]
+        );
+
+        if (responsables.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Responsable no encontrado'
+            });
+        }
+
+        const responsable = responsables[0];
+
+        if (!responsable.activo) {
+            return res.status(400).json({
+                success: false,
+                message: 'El responsable seleccionado está inactivo'
+            });
+        }
+
+        if (
+            req.user.rol !== 'administrador' &&
+            Number(req.user.area_id) !== Number(areaResponsableId)
+        ) {
+            return res.status(403).json({
+                success: false,
+                message: 'Solo el área que atiende puede asignar esta incidencia'
+            });
+        }
+
+        if (
+            req.user.rol !== 'administrador' &&
+            Number(responsable.area_id) !== Number(areaResponsableId)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: 'Selecciona un responsable del área que atiende la incidencia'
+            });
+        }
+
+        const estadoNuevo = estadoAnterior === 'nueva'
+            ? 'asignada'
+            : estadoAnterior;
 
         await db.query(
             `
             UPDATE incidencias
             SET
                 usuario_asignado_id = ?,
-                estado = 'asignada',
+                estado = ?,
                 fecha_asignacion = COALESCE(fecha_asignacion, NOW())
             WHERE id = ?
             `,
-            [responsable_usuario_id, id]
+            [
+                responsable_usuario_id,
+                estadoNuevo,
+                id
+            ]
         );
 
         await registrarHistorial({
@@ -515,7 +883,7 @@ async function asignarIncidencia(req, res) {
             usuarioId: req.user.id,
             accion: 'Incidencia asignada',
             estadoAnterior,
-            estadoNuevo: 'asignada',
+            estadoNuevo,
             comentario: comentario?.trim() || null
         });
 
@@ -536,7 +904,13 @@ async function asignarIncidencia(req, res) {
 async function cambiarEstadoIncidencia(req, res) {
     try {
         const { id } = req.params;
-        const { estado, comentario = '' } = req.body;
+        const {
+            estado,
+            comentario = '',
+            solucion_aplicada = '',
+            causa_raiz = '',
+            observacion_cierre = ''
+        } = req.body;
 
         if (!validarEstado(estado)) {
             return res.status(400).json({
@@ -547,7 +921,7 @@ async function cambiarEstadoIncidencia(req, res) {
 
         const [incidencias] = await db.query(
             `
-            SELECT id, estado
+            SELECT id, estado, fecha_inicio_atencion
             FROM incidencias
             WHERE id = ?
             LIMIT 1
@@ -563,49 +937,91 @@ async function cambiarEstadoIncidencia(req, res) {
         }
 
         const estadoAnterior = incidencias[0].estado;
-        const camposFecha = [];
+        const errorTransicion = validarTransicionEstado(
+            estadoAnterior,
+            estado
+        );
 
-        if (estado === 'asignada') {
-            camposFecha.push(
-                'fecha_asignacion = COALESCE(fecha_asignacion, NOW())'
-            );
+        if (errorTransicion) {
+            return res.status(400).json({
+                success: false,
+                message: errorTransicion
+            });
         }
 
+        if (
+            estado === 'resuelta' &&
+            !incidencias[0].fecha_inicio_atencion
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: 'Debes iniciar atencion antes de resolver la incidencia'
+            });
+        }
+
+        if (estado === 'resuelta' && !solucion_aplicada.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Debes registrar la solucion aplicada para resolver la incidencia'
+            });
+        }
+
+        const campos = [
+            'estado = ?'
+        ];
+        const valores = [
+            estado
+        ];
+
         if (estado === 'en_proceso') {
-            camposFecha.push(
+            campos.push(
                 'fecha_inicio_atencion = COALESCE(fecha_inicio_atencion, NOW())'
             );
         }
 
         if (estado === 'resuelta') {
-            camposFecha.push('fecha_resolucion = NOW()');
+            campos.push(
+                'fecha_resolucion = NOW()',
+                'solucion_aplicada = ?'
+            );
+            valores.push(solucion_aplicada.trim());
+
+            if (causa_raiz.trim()) {
+                campos.push('causa_raiz = ?');
+                valores.push(causa_raiz.trim());
+            }
         }
 
-        if (estado === 'cerrada') {
-            camposFecha.push('fecha_cierre = NOW()');
+        if (estado === 'cerrada' || estado === 'cancelada') {
+            campos.push('fecha_cierre = NOW()');
+
+            if (estado === 'cerrada' && observacion_cierre.trim()) {
+                campos.push('observacion_cierre = ?');
+                valores.push(observacion_cierre.trim());
+            }
         }
 
-        const setFechas = camposFecha.length
-            ? `, ${camposFecha.join(', ')}`
-            : '';
-
+        valores.push(id);
         await db.query(
             `
             UPDATE incidencias
-            SET estado = ?
-                ${setFechas}
+            SET ${campos.join(', ')}
             WHERE id = ?
             `,
-            [estado, id]
+            valores
         );
 
         await registrarHistorial({
             incidenciaId: id,
             usuarioId: req.user.id,
-            accion: `Estado cambiado a ${estado}`,
+            accion: ACCIONES_ESTADO[estado] || `Estado cambiado a ${estado}`,
             estadoAnterior,
             estadoNuevo: estado,
-            comentario: comentario?.trim() || null
+            comentario:
+                comentario?.trim() ||
+                solucion_aplicada.trim() ||
+                observacion_cierre.trim() ||
+                null
         });
 
         return res.json({
@@ -653,12 +1069,13 @@ async function agregarComentario(req, res) {
 
         await db.query(
             `
-            INSERT INTO comentarios_incidencia (
+            INSERT INTO comentarios_incidencias (
                 incidencia_id,
                 usuario_id,
-                comentario
+                comentario,
+                es_interno
             )
-            VALUES (?, ?, ?)
+            VALUES (?, ?, ?, 1)
             `,
             [
                 id,
@@ -690,6 +1107,7 @@ async function agregarComentario(req, res) {
 
 module.exports = {
     obtenerIncidencias,
+    obtenerResponsables,
     obtenerIncidenciaPorId,
     crearIncidencia,
     asignarIncidencia,

@@ -8,6 +8,7 @@ import {
 
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
+import SystemNotifications from '../components/ui/SystemNotifications';
 
 import useAuth from '../hooks/useAuth';
 
@@ -42,6 +43,8 @@ function MainLayout() {
                 <main className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
                     <Outlet />
                 </main>
+
+                <SystemNotifications />
             </div>
         </div>
     );

@@ -14,6 +14,12 @@ export async function obtenerIncidenciaPorId(id) {
     return respuesta.data;
 }
 
+export async function obtenerResponsablesIncidencias() {
+    const respuesta = await api.get('/incidencias/responsables');
+
+    return respuesta.data;
+}
+
 export async function crearIncidencia(datos) {
     const respuesta = await api.post('/incidencias', datos);
 
@@ -48,13 +54,13 @@ export async function asignarIncidencia(
 export async function cambiarEstadoIncidencia(
     id,
     estado,
-    comentario = ''
+    datos = {}
 ) {
     const respuesta = await api.patch(
         `/incidencias/${id}/estado`,
         {
             estado,
-            comentario
+            ...datos
         }
     );
 

@@ -1,5 +1,4 @@
 import {
-    createContext,
     useEffect,
     useMemo,
     useState
@@ -12,7 +11,9 @@ import {
     obtenerUsuarioGuardado
 } from '../services/auth.service';
 
-export const AuthContext = createContext(null);
+import {
+    AuthContext
+} from './auth-context';
 
 export function AuthProvider({ children }) {
     const [usuario, setUsuario] = useState(

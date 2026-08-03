@@ -1,9 +1,10 @@
 import {
     Bell,
+    BellOff,
     ChevronDown,
     LogOut,
     Menu,
-    Search
+    X
 } from 'lucide-react';
 
 import {
@@ -19,6 +20,12 @@ import {
 
 import useAuth from '../../hooks/useAuth';
 
+import {
+    eliminarNotificacion,
+    EVENTO_NOTIFICACIONES,
+    obtenerNotificaciones
+} from '../../utils/notificaciones';
+
 const nombresRutas = {
     '/': {
         titulo: 'Dashboard ejecutivo',
@@ -26,7 +33,7 @@ const nombresRutas = {
             'Resumen operativo del Centro de incidencias'
     },
     '/incidencias': {
-        titulo: 'Incidencias',
+        titulo: 'Reportes',
         subtitulo:
             'Consulta, seguimiento y atención de reportes'
     },
@@ -51,7 +58,7 @@ const nombresRutas = {
             'Horarios operativos de producción'
     },
     '/reportes': {
-        titulo: 'Reportes',
+        titulo: 'Histórico',
         subtitulo:
             'Indicadores, tiempos y exportación de datos'
     },
@@ -75,8 +82,16 @@ function Header({
 
     const [menuPerfilAbierto, setMenuPerfilAbierto] =
         useState(false);
+    const [
+        notificacionesAbiertas,
+        setNotificacionesAbiertas
+    ] = useState(false);
+    const [notificaciones, setNotificaciones] = useState(
+        obtenerNotificaciones
+    );
 
     const menuRef = useRef(null);
+    const notificacionesRef = useRef(null);
 
     const datosRuta =
         nombresRutas[location.pathname] ||
@@ -94,6 +109,13 @@ function Header({
             ) {
                 setMenuPerfilAbierto(false);
             }
+
+            if (
+                notificacionesRef.current &&
+                !notificacionesRef.current.contains(evento.target)
+            ) {
+                setNotificacionesAbiertas(false);
+            }
         }
 
         document.addEventListener(
@@ -109,9 +131,44 @@ function Header({
         };
     }, []);
 
+    useEffect(() => {
+        function actualizarNotificaciones(evento) {
+            setNotificaciones(
+                evento.detail || obtenerNotificaciones()
+            );
+        }
+
+        window.addEventListener(
+            EVENTO_NOTIFICACIONES,
+            actualizarNotificaciones
+        );
+
+        window.addEventListener(
+            'storage',
+            actualizarNotificaciones
+        );
+
+        return () => {
+            window.removeEventListener(
+                EVENTO_NOTIFICACIONES,
+                actualizarNotificaciones
+            );
+
+            window.removeEventListener(
+                'storage',
+                actualizarNotificaciones
+            );
+        };
+    }, []);
+
     function salir() {
         cerrarSesion();
         navigate('/login', { replace: true });
+    }
+
+    function quitarNotificacion(id) {
+        eliminarNotificacion(id);
+        setNotificaciones(obtenerNotificaciones());
     }
 
     const iniciales = usuario?.nombre
@@ -147,26 +204,94 @@ function Header({
                 </div>
 
                 <div className="flex items-center gap-2 sm:gap-3">
-                    <button
-                        type="button"
-                        className="hidden h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-500 transition hover:border-slate-300 hover:bg-white md:flex"
+                    <div
+                        ref={notificacionesRef}
+                        className="relative"
                     >
-                        <Search size={18} />
-                        <span>Buscar...</span>
-                        <kbd className="ml-5 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px]">
-                            Ctrl K
-                        </kbd>
-                    </button>
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setNotificacionesAbiertas(
+                                    (actual) => !actual
+                                )
+                            }
+                            className="relative grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50"
+                            aria-label="Notificaciones"
+                        >
+                            <Bell size={20} />
 
-                    <button
-                        type="button"
-                        className="relative grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50"
-                        aria-label="Notificaciones"
-                    >
-                        <Bell size={20} />
+                            {notificaciones.length > 0 && (
+                                <span className="absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white ring-2 ring-white">
+                                    {notificaciones.length}
+                                </span>
+                            )}
+                        </button>
 
-                        <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
-                    </button>
+                        {notificacionesAbiertas && (
+                            <div className="absolute right-0 mt-3 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                                <div className="border-b border-slate-100 px-4 py-3">
+                                    <p className="font-bold text-slate-950">
+                                        Notificaciones
+                                    </p>
+                                </div>
+
+                                {notificaciones.length === 0 ? (
+                                    <div className="grid min-h-36 place-items-center px-5 py-6 text-center">
+                                        <div>
+                                            <BellOff
+                                                size={34}
+                                                className="mx-auto text-slate-300"
+                                            />
+
+                                            <p className="mt-3 text-sm font-semibold text-slate-500">
+                                                No hay nuevas notificaciones
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="custom-scrollbar max-h-96 divide-y divide-slate-100 overflow-y-auto">
+                                        {notificaciones.map(
+                                            (notificacion) => (
+                                                <article
+                                                    key={
+                                                        notificacion.id
+                                                    }
+                                                    className="flex gap-3 px-4 py-3"
+                                                >
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="font-bold text-slate-950">
+                                                            {
+                                                                notificacion.titulo
+                                                            }
+                                                        </p>
+
+                                                        <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">
+                                                            {
+                                                                notificacion.mensaje
+                                                            }
+                                                        </p>
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        aria-label="Eliminar notificación"
+                                                        onClick={() =>
+                                                            quitarNotificacion(
+                                                                notificacion.id
+                                                            )
+                                                        }
+                                                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                </article>
+                                            )
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
 
                     <div
                         ref={menuRef}

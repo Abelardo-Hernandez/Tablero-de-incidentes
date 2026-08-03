@@ -15,6 +15,10 @@ import {
     crearIncidencia
 } from '../../services/incidencias.service';
 
+import {
+    cargarConfiguracion
+} from '../../utils/configuracion';
+
 const formularioInicial = {
     titulo: '',
     descripcion: '',
@@ -53,10 +57,17 @@ function IncidenciaModal({
 
         setFormulario({
             ...formularioInicial,
-            area_origen_id: usuario?.area_id || ''
+            prioridad:
+                cargarConfiguracion().prioridadDefault ||
+                formularioInicial.prioridad,
+            area_origen_id: usuario?.area_id || '',
+            turno_id:
+                turnos.length === 1
+                    ? turnos[0].id
+                    : ''
         });
         setError('');
-    }, [abierto, usuario?.area_id]);
+    }, [abierto, usuario?.area_id, turnos]);
 
     function manejarCambio(evento) {
         const {
@@ -93,12 +104,12 @@ function IncidenciaModal({
         }
 
         if (!formulario.area_origen_id) {
-            setError('Selecciona el área origen.');
+            setError('Selecciona el área que reporta.');
             return;
         }
 
         if (!formulario.area_responsable_id) {
-            setError('Selecciona el área responsable.');
+            setError('Selecciona el área que atiende.');
             return;
         }
 
@@ -148,7 +159,7 @@ function IncidenciaModal({
             abierto={abierto}
             onCerrar={onCerrar}
             titulo="Registrar incidencia"
-            descripcion="Captura el problema detectado y envíalo al área responsable."
+            descripcion="Captura el problema detectado y envíalo al área que atiende."
             ancho="max-w-3xl"
         >
             <form onSubmit={manejarEnvio}>
@@ -277,7 +288,7 @@ function IncidenciaModal({
                                 htmlFor="area_origen_id"
                                 className="mb-2 block text-sm font-semibold text-slate-700"
                             >
-                                Área origen
+                                Área que reporta
                             </label>
 
                             <select
@@ -308,7 +319,7 @@ function IncidenciaModal({
                                 htmlFor="area_responsable_id"
                                 className="mb-2 block text-sm font-semibold text-slate-700"
                             >
-                                Área responsable
+                                Área que atiende
                             </label>
 
                             <select

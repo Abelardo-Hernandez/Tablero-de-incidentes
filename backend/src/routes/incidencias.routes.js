@@ -2,6 +2,7 @@ const express = require('express');
 
 const {
     obtenerIncidencias,
+    obtenerResponsables,
     obtenerIncidenciaPorId,
     crearIncidencia,
     asignarIncidencia,
@@ -18,6 +19,7 @@ const router = express.Router();
 router.use(verificarToken);
 
 router.get('/', obtenerIncidencias);
+router.get('/responsables', obtenerResponsables);
 router.get('/:id', obtenerIncidenciaPorId);
 router.post('/', crearIncidencia);
 router.patch('/:id/asignar', asignarIncidencia);

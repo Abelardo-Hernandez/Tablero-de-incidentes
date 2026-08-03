@@ -1,7 +1,7 @@
 import {
-    AlertTriangle,
     CheckCircle2,
     ClipboardList,
+    Eye,
     ListChecks,
     PlayCircle,
     Plus,
@@ -23,16 +23,14 @@ import {
 } from '../../services/catalogos.service';
 
 import {
-    obtenerIncidencias
+    obtenerIncidencias,
+    obtenerResponsablesIncidencias
 } from '../../services/incidencias.service';
-
-import {
-    obtenerUsuarios
-} from '../../services/usuarios.service';
 
 import IncidenciaDetallePanel from './IncidenciaDetallePanel';
 import IncidenciaModal from './IncidenciaModal';
 import KanbanColumn from './components/KanbanColumn';
+import useAuth from '../../hooks/useAuth';
 
 const columnas = [
     {
@@ -69,7 +67,15 @@ const columnas = [
     }
 ];
 
+const estadosAbiertos = [
+    'nueva',
+    'asignada',
+    'en_proceso'
+];
+
 function IncidenciasPage() {
+    const { usuario } = useAuth();
+
     const [incidencias, setIncidencias] = useState([]);
     const [areas, setAreas] = useState([]);
     const [lineas, setLineas] = useState([]);
@@ -135,9 +141,7 @@ function IncidenciasPage() {
                     obtenerAreasActivas(),
                     obtenerLineasActivas(),
                     obtenerTurnosActivos(),
-                    obtenerUsuarios({
-                        activo: true
-                    })
+                    obtenerResponsablesIncidencias()
                 ]);
 
                 if (resultados[0].status === 'fulfilled') {
@@ -169,10 +173,7 @@ function IncidenciasPage() {
     const metricas = useMemo(() => {
         const abiertas = incidencias.filter(
             (incidencia) =>
-                ![
-                    'resuelta',
-                    'cancelada'
-                ].includes(incidencia.estado)
+                estadosAbiertos.includes(incidencia.estado)
         );
 
         return {
@@ -195,6 +196,20 @@ function IncidenciasPage() {
         };
     }, [incidencias]);
 
+    const misIncidenciasAsignadas = useMemo(
+        () =>
+            incidencias.filter(
+                (incidencia) =>
+                    Number(incidencia.responsable_usuario_id) ===
+                        Number(usuario?.id) &&
+                    [
+                        'asignada',
+                        'en_proceso'
+                    ].includes(incidencia.estado)
+            ),
+        [incidencias, usuario?.id]
+    );
+
     function manejarFiltro(evento) {
         const {
             name,
@@ -209,54 +224,118 @@ function IncidenciasPage() {
 
     return (
         <div className="mx-auto max-w-[1800px] space-y-6">
-            <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                    <div className="flex items-center gap-2 text-sm font-bold text-emerald-700">
-                        <ListChecks size={18} />
-                        Centro de Incidencias
+            <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+                <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <div className="flex items-center gap-2 text-sm font-bold text-emerald-700">
+                            <ListChecks size={17} />
+                            Centro de Incidencias
+                        </div>
+
+                        <h2 className="mt-1 text-xl font-bold text-slate-950">
+                            Tablero de Reportes
+                        </h2>
+
+                        <p className="mt-0.5 text-xs text-slate-500">
+                        Registra, asigna, atiende y da seguimiento a incidencias de producción.
+                        </p>
                     </div>
 
-                    <h2 className="mt-2 text-2xl font-bold text-slate-950">
-                        Tablero de Reportes
-                    </h2>
-
-                    <p className="mt-1 text-sm text-slate-500">
-                        Registra, asigna, atiende y da seguimiento a incidencias de producción.
-                    </p>
+                    <button
+                        type="button"
+                        onClick={() => setModalAbierto(true)}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-700/15 transition hover:bg-emerald-600"
+                    >
+                        <Plus size={17} />
+                        Nueva incidencia
+                    </button>
                 </div>
 
-                <button
-                    type="button"
-                    onClick={() => setModalAbierto(true)}
-                    className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 font-bold text-white shadow-lg shadow-emerald-700/15 transition hover:bg-emerald-600"
-                >
-                    <Plus size={19} />
-                    Nueva incidencia
-                </button>
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                    <p className="text-xs font-bold uppercase text-slate-400">
+                        Resumen actual
+                    </p>
+
+                    <div className="mt-2 divide-y divide-slate-100">
+                        <ResumenMetrica
+                            titulo="Abiertas"
+                            valor={metricas.abiertas}
+                            tono="emerald"
+                        />
+                        <ResumenMetrica
+                            titulo="Críticas"
+                            valor={metricas.criticas}
+                            tono="red"
+                        />
+                        <ResumenMetrica
+                            titulo="Sin responsable"
+                            valor={metricas.sinResponsable}
+                            tono="amber"
+                        />
+                        <ResumenMetrica
+                            titulo="Resueltas"
+                            valor={metricas.resueltas}
+                            tono="blue"
+                        />
+                    </div>
+                </div>
             </section>
 
-            <section className="grid gap-4 md:grid-cols-4">
-                <Kpi
-                    titulo="Abiertas"
-                    valor={metricas.abiertas}
-                    tono="emerald"
-                />
-                <Kpi
-                    titulo="Críticas"
-                    valor={metricas.criticas}
-                    tono="red"
-                />
-                <Kpi
-                    titulo="Sin responsable"
-                    valor={metricas.sinResponsable}
-                    tono="amber"
-                />
-                <Kpi
-                    titulo="Resueltas"
-                    valor={metricas.resueltas}
-                    tono="blue"
-                />
-            </section>
+            {misIncidenciasAsignadas.length > 0 && (
+                <section className="rounded-3xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h2 className="font-bold text-emerald-950">
+                                Mis incidencias asignadas
+                            </h2>
+
+                            <p className="text-sm text-emerald-800/70">
+                                Casos donde eres el encargado de la atención.
+                            </p>
+                        </div>
+
+                        <span className="rounded-full bg-white px-3 py-1 text-sm font-bold text-emerald-700">
+                            {misIncidenciasAsignadas.length} pendiente(s)
+                        </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                        {misIncidenciasAsignadas.map((incidencia) => (
+                            <article
+                                key={incidencia.id}
+                                className="flex flex-col gap-3 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+                            >
+                                <div className="min-w-0">
+                                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">
+                                        {incidencia.folio}
+                                    </p>
+
+                                    <h3 className="mt-1 truncate font-bold text-slate-950">
+                                        {incidencia.titulo}
+                                    </h3>
+
+                                    <p className="mt-1 truncate text-sm text-slate-500">
+                                        {incidencia.linea_nombre || 'Sin línea'} · {incidencia.area_nombre || 'Sin área'} · {incidencia.estado === 'asignada' ? 'Asignada' : 'En proceso'}
+                                    </p>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setIncidenciaSeleccionada(
+                                            incidencia
+                                        )
+                                    }
+                                    className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white transition hover:bg-emerald-600"
+                                >
+                                    <Eye size={17} />
+                                    Atender
+                                </button>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+            )}
 
             <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="grid gap-4 xl:grid-cols-[1fr_190px_180px_220px_220px]">
@@ -430,39 +509,33 @@ function IncidenciasPage() {
     );
 }
 
-function Kpi({
+function ResumenMetrica({
     titulo,
     valor,
     tono
 }) {
     const tonos = {
-        emerald: 'bg-emerald-50 text-emerald-700',
-        red: 'bg-red-50 text-red-700',
-        amber: 'bg-amber-50 text-amber-700',
-        blue: 'bg-blue-50 text-blue-700'
+        emerald: 'text-emerald-700',
+        red: 'text-red-700',
+        amber: 'text-amber-700',
+        blue: 'text-blue-700'
     };
 
     return (
-        <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-500">
-                    {titulo}
-                </p>
+        <div className="flex min-h-7 items-center justify-between gap-4 py-1">
+            <p className="truncate text-xs font-semibold text-slate-500">
+                {titulo}
+            </p>
 
-                <div
-                    className={[
-                        'grid h-10 w-10 place-items-center rounded-xl',
-                        tonos[tono]
-                    ].join(' ')}
-                >
-                    <AlertTriangle size={18} />
-                </div>
-            </div>
-
-            <p className="mt-3 text-3xl font-bold text-slate-950">
+            <p
+                className={[
+                    'shrink-0 text-xl font-black leading-none',
+                    tonos[tono]
+                ].join(' ')}
+            >
                 {valor}
             </p>
-        </article>
+        </div>
     );
 }
 

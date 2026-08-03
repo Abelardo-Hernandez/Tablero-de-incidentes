@@ -20,6 +20,7 @@ import {
 const formularioInicial = {
     nombre: '',
     usuario: '',
+    correo: '',
     password: '',
     rol: 'usuario',
     area_id: '',
@@ -53,6 +54,7 @@ function UsuarioModal({
             setFormulario({
                 nombre: usuarioEditar.nombre || '',
                 usuario: usuarioEditar.usuario || '',
+                correo: usuarioEditar.correo || '',
                 password: '',
                 rol: usuarioEditar.rol || 'usuario',
                 area_id: usuarioEditar.area_id || '',
@@ -133,6 +135,16 @@ function UsuarioModal({
         }
 
         if (
+            formulario.correo &&
+            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+                formulario.correo.trim()
+            )
+        ) {
+            setError('El correo no tiene un formato válido.');
+            return;
+        }
+
+        if (
             formulario.rol === 'usuario' &&
             !formulario.area_id
         ) {
@@ -156,6 +168,7 @@ function UsuarioModal({
         const datos = {
             nombre: formulario.nombre.trim(),
             usuario: formulario.usuario.trim(),
+            correo: formulario.correo.trim() || null,
             rol: formulario.rol,
             area_id: formulario.area_id
                 ? Number(formulario.area_id)
@@ -265,6 +278,27 @@ function UsuarioModal({
                                 placeholder="Ej. carlos.mecanico"
                                 disabled={guardando}
                                 autoComplete="off"
+                                className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                            />
+                        </div>
+
+                        <div>
+                            <label
+                                htmlFor="correo"
+                                className="mb-2 block text-sm font-semibold text-slate-700"
+                            >
+                                Correo
+                            </label>
+
+                            <input
+                                id="correo"
+                                name="correo"
+                                type="email"
+                                value={formulario.correo}
+                                onChange={manejarCambio}
+                                placeholder="Ej. carlos@empresa.com"
+                                disabled={guardando}
+                                autoComplete="email"
                                 className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
                             />
                         </div>

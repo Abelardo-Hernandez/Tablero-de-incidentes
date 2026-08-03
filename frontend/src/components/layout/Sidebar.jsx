@@ -13,17 +13,28 @@ import {
 } from 'lucide-react';
 
 import {
+    useEffect,
+    useState
+} from 'react';
+
+import {
     NavLink
 } from 'react-router';
+
+import {
+    cargarConfiguracion,
+    EVENTO_CONFIGURACION
+} from '../../utils/configuracion';
 
 const menuPrincipal = [
     {
         nombre: 'Dashboard',
         ruta: '/',
-        icono: LayoutDashboard
+        icono: LayoutDashboard,
+        soloResponsableArea: true
     },
     {
-        nombre: 'Incidencias',
+        nombre: 'Reportes',
         ruta: '/incidencias',
         icono: AlertTriangle
     },
@@ -55,9 +66,10 @@ const menuPrincipal = [
 
 const menuSecundario = [
     {
-        nombre: 'Reportes',
+        nombre: 'Histórico',
         ruta: '/reportes',
-        icono: FileBarChart
+        icono: FileBarChart,
+        soloResponsableArea: true
     },
     {
         nombre: 'Vista TV',
@@ -81,11 +93,48 @@ function Sidebar({
 }) {
     const esAdmin =
         usuario?.rol === 'administrador';
+    const esResponsableArea =
+        esAdmin || Boolean(usuario?.es_lider);
+    const [configuracion, setConfiguracion] = useState(
+        cargarConfiguracion
+    );
+
+    useEffect(() => {
+        function actualizar(evento) {
+            setConfiguracion(
+                evento.detail || cargarConfiguracion()
+            );
+        }
+
+        window.addEventListener(
+            EVENTO_CONFIGURACION,
+            actualizar
+        );
+        window.addEventListener(
+            'storage',
+            actualizar
+        );
+
+        return () => {
+            window.removeEventListener(
+                EVENTO_CONFIGURACION,
+                actualizar
+            );
+            window.removeEventListener(
+                'storage',
+                actualizar
+            );
+        };
+    }, []);
 
     function filtrarMenu(elementos) {
         return elementos.filter(
             (elemento) =>
-                !elemento.soloAdmin || esAdmin
+                (!elemento.soloAdmin || esAdmin) &&
+                (
+                    !elemento.soloResponsableArea ||
+                    esResponsableArea
+                )
         );
     }
 
@@ -164,11 +213,11 @@ function Sidebar({
                     {!colapsado && (
                         <div className="min-w-0">
                             <p className="truncate text-lg font-bold">
-                                Reportes
+                                {configuracion.nombreSistema}
                             </p>
 
                             <p className="text-xs text-slate-500">
-                                Confecciones Punto Textil
+                                {configuracion.empresa}
                             </p>
                         </div>
                     )}

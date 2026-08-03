@@ -131,7 +131,7 @@ function IncidenciaCard({
 
                     <span className="truncate">
                         {incidencia.area_nombre ||
-                            'Sin área responsable'}
+                            'Sin área que atiende'}
                     </span>
                 </div>
 

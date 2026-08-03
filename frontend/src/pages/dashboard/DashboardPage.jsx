@@ -1,8 +1,4 @@
 import {
-    AlertTriangle,
-    Clock3,
-    Factory,
-    OctagonAlert,
     Play,
     TrendingUp
 } from 'lucide-react';
@@ -25,6 +21,10 @@ import {
 } from '../../services/incidencias.service';
 
 import {
+    obtenerVideosLocales
+} from '../../services/videos.service';
+
+import {
     obtenerTiempoTranscurrido
 } from '../../utils/fechas';
 
@@ -32,13 +32,6 @@ const estadosAbiertos = [
     'nueva',
     'asignada',
     'en_proceso'
-];
-
-const videosLocales = [
-    {
-        titulo: 'Comunicación interna',
-        src: '/videos/dashboard.mp4'
-    }
 ];
 
 function calcularPromedioResolucion(incidencias) {
@@ -122,6 +115,10 @@ function DashboardPage() {
     const [error, setError] = useState('');
     const [videoDisponible, setVideoDisponible] =
         useState(true);
+    const [videos, setVideos] = useState([
+        '/videos/dashboard.mp4'
+    ]);
+    const [videoActual, setVideoActual] = useState(0);
     const [, setTick] = useState(0);
 
     useEffect(() => {
@@ -158,6 +155,66 @@ function DashboardPage() {
         }, 30000);
 
         return () => window.clearInterval(intervalo);
+    }, []);
+
+    useEffect(() => {
+        async function cargarPlaylist() {
+            try {
+                const respuestaVideos =
+                    await obtenerVideosLocales();
+
+                const rutasAutomaticas = (
+                    respuestaVideos.data || []
+                )
+                    .map((video) => video.src)
+                    .filter(Boolean);
+
+                if (rutasAutomaticas.length > 0) {
+                    setVideos(rutasAutomaticas);
+                    setVideoActual(0);
+                    setVideoDisponible(true);
+                    return;
+                }
+            } catch (errorVideos) {
+                console.warn(
+                    'No fue posible cargar videos automáticos:',
+                    errorVideos
+                );
+            }
+
+            try {
+                const respuesta = await fetch(
+                    '/videos/playlist.json'
+                );
+
+                if (!respuesta.ok) {
+                    return;
+                }
+
+                const archivos = await respuesta.json();
+
+                const rutas = archivos
+                    .filter(Boolean)
+                    .map((archivo) =>
+                        archivo.startsWith('/')
+                            ? archivo
+                            : `/videos/${archivo}`
+                    );
+
+                if (rutas.length > 0) {
+                    setVideos(rutas);
+                    setVideoActual(0);
+                    setVideoDisponible(true);
+                }
+            } catch (errorPlaylist) {
+                console.warn(
+                    'No fue posible cargar playlist de videos:',
+                    errorPlaylist
+                );
+            }
+        }
+
+        cargarPlaylist();
     }, []);
 
     const datos = useMemo(() => {
@@ -213,7 +270,7 @@ function DashboardPage() {
         };
     }, [incidencias]);
 
-    const videoPrincipal = videosLocales[0];
+    const videoPrincipal = videos[videoActual];
 
     return (
         <div className="mx-auto max-w-[1600px] space-y-6">
@@ -233,7 +290,6 @@ function DashboardPage() {
                     }
                     descripcion="Registros activos durante el día"
                     variacion={null}
-                    icono={AlertTriangle}
                     tono="verde"
                 />
 
@@ -246,7 +302,6 @@ function DashboardPage() {
                     }
                     descripcion="Requieren intervención inmediata"
                     variacion={null}
-                    icono={OctagonAlert}
                     tono="rojo"
                 />
 
@@ -259,7 +314,6 @@ function DashboardPage() {
                     }
                     descripcion="Promedio de resolución"
                     variacion={null}
-                    icono={Clock3}
                     tono="ambar"
                 />
 
@@ -272,49 +326,49 @@ function DashboardPage() {
                     }
                     descripcion="Incidencias con impacto productivo"
                     variacion={null}
-                    icono={Factory}
                     tono="azul"
                 />
             </section>
 
             <section className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
                 <article className="overflow-hidden rounded-3xl border border-slate-200 bg-[#071629] shadow-lg">
-                    <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
-                        <div>
-                            <p className="text-lg font-bold text-white">
-                                Comunicación interna
-                            </p>
-
-                            <p className="mt-1 text-sm text-slate-400">
-                                Videos locales para seguridad, avisos e información operativa
-                            </p>
-                        </div>
-
-                        <div className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-500 text-white">
-                            <Play
-                                size={20}
-                                fill="currentColor"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="relative grid min-h-[330px] place-items-center overflow-hidden">
+                    <div className="relative aspect-video min-h-[260px] overflow-hidden">
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.18),transparent_55%)]" />
 
                         {videoDisponible ? (
                             <video
-                                className="relative h-full min-h-[330px] w-full object-cover"
-                                src={videoPrincipal.src}
+                                className="relative h-full w-full object-contain"
+                                key={videoPrincipal}
+                                src={videoPrincipal}
+                                autoPlay
                                 controls
+                                loop={videos.length === 1}
                                 muted
                                 playsInline
-                                preload="metadata"
-                                onError={() =>
-                                    setVideoDisponible(false)
-                                }
+                                preload="auto"
+                                onEnded={() => {
+                                    setVideoActual(
+                                        (actual) =>
+                                            (actual + 1) %
+                                            videos.length
+                                    );
+                                }}
+                                onError={() => {
+                                    if (videos.length > 1) {
+                                        setVideoActual(
+                                            (actual) =>
+                                                (actual + 1) %
+                                                videos.length
+                                        );
+                                        return;
+                                    }
+
+                                    setVideoDisponible(false);
+                                }}
                             />
                         ) : (
-                            <div className="relative px-6 text-center">
+                            <div className="relative grid h-full place-items-center px-6 text-center">
+                                <div>
                                 <div className="mx-auto grid h-20 w-20 place-items-center rounded-full border border-emerald-400/20 bg-emerald-400/10 text-emerald-400">
                                     <Play
                                         size={32}
@@ -329,6 +383,7 @@ function DashboardPage() {
                                 <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
                                     Los contenidos locales aparecerán en este espacio cuando estén disponibles.
                                 </p>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -480,7 +535,7 @@ function DashboardPage() {
 
                                     <div>
                                         <p className="text-xs text-slate-400">
-                                            Área responsable
+                                            Área que atiende
                                         </p>
 
                                         <p className="mt-1 font-semibold text-slate-700">

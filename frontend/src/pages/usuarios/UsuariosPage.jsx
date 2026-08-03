@@ -3,7 +3,6 @@ import {
     KeyRound,
     Plus,
     Search,
-    ShieldCheck,
     ToggleLeft,
     ToggleRight,
     UserRound,
@@ -179,34 +178,8 @@ function UsuariosPage() {
 
     return (
         <div className="mx-auto max-w-[1600px] space-y-6">
-            <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                    <div className="flex items-center gap-2 text-sm font-bold text-emerald-700">
-                        <ShieldCheck size={18} />
-                        Administración
-                    </div>
-
-                    <h2 className="mt-2 text-2xl font-bold text-slate-950">
-                        Usuarios del sistema
-                    </h2>
-
-                    <p className="mt-1 text-sm text-slate-500">
-                        Supervisa accesos, áreas, líneas y responsables.
-                    </p>
-                </div>
-
-                <button
-                    type="button"
-                    onClick={abrirNuevoUsuario}
-                    className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 font-bold text-white shadow-lg shadow-emerald-700/15 transition hover:bg-emerald-600"
-                >
-                    <Plus size={19} />
-                    Nuevo usuario
-                </button>
-            </section>
-
             <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="grid gap-4 md:grid-cols-[1fr_220px]">
+                <div className="grid gap-4 md:grid-cols-[1fr_220px_auto]">
                     <div className="relative">
                         <Search
                             size={19}
@@ -217,7 +190,7 @@ function UsuariosPage() {
                             name="buscar"
                             value={filtros.buscar}
                             onChange={manejarFiltro}
-                            placeholder="Buscar por nombre, usuario, área o línea..."
+                            placeholder="Buscar por nombre, usuario, correo, área o línea..."
                             className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-12 pr-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
                         />
                     </div>
@@ -240,6 +213,15 @@ function UsuariosPage() {
                             Inactivos
                         </option>
                     </select>
+
+                    <button
+                        type="button"
+                        onClick={abrirNuevoUsuario}
+                        className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 font-bold text-white shadow-lg shadow-emerald-700/15 transition hover:bg-emerald-600"
+                    >
+                        <Plus size={19} />
+                        Nuevo usuario
+                    </button>
                 </div>
             </section>
 
@@ -296,148 +278,160 @@ function UsuariosPage() {
                         </div>
                     </div>
                 ) : (
-                    <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                        {usuarios.map((usuario) => {
-                            const iniciales = usuario.nombre
-                                .split(' ')
-                                .filter(Boolean)
-                                .slice(0, 2)
-                                .map((parte) => parte[0])
-                                .join('')
-                                .toUpperCase();
+                    <div className="custom-scrollbar overflow-x-auto">
+                        <table className="w-full min-w-[1220px] table-fixed text-left">
+                            <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-400">
+                                <tr>
+                                    <th className="w-[20%] px-6 py-3">Usuario</th>
+                                    <th className="w-[18%] px-6 py-3">Correo</th>
+                                    <th className="w-[9%] px-6 py-3">Rol</th>
+                                    <th className="w-[14%] px-6 py-3">Área</th>
+                                    <th className="w-[14%] px-6 py-3">Línea</th>
+                                    <th className="w-[12%] px-6 py-3">Responsabilidad</th>
+                                    <th className="w-[7%] px-6 py-3">Estado</th>
+                                    <th className="w-[6%] px-6 py-3">Acciones</th>
+                                </tr>
+                            </thead>
 
-                            return (
-                                <article
-                                    key={usuario.id}
-                                    className="rounded-2xl border border-slate-200 p-5 transition hover:border-emerald-200 hover:shadow-md"
-                                >
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="flex min-w-0 items-center gap-3">
-                                            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-100 font-bold text-emerald-800">
-                                                {iniciales}
-                                            </div>
+                            <tbody className="divide-y divide-slate-100">
+                                {usuarios.map((usuario) => {
+                                    const iniciales = usuario.nombre
+                                        .split(' ')
+                                        .filter(Boolean)
+                                        .slice(0, 2)
+                                        .map((parte) => parte[0])
+                                        .join('')
+                                        .toUpperCase();
 
-                                            <div className="min-w-0">
-                                                <h4 className="truncate font-bold text-slate-900">
-                                                    {usuario.nombre}
-                                                </h4>
-
-                                                <p className="truncate text-sm text-slate-500">
-                                                    @{usuario.usuario}
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <span
-                                            className={[
-                                                'rounded-full px-2.5 py-1 text-xs font-bold',
-                                                usuario.activo
-                                                    ? 'bg-emerald-50 text-emerald-700'
-                                                    : 'bg-slate-100 text-slate-500'
-                                            ].join(' ')}
+                                    return (
+                                        <tr
+                                            key={usuario.id}
+                                            className="transition hover:bg-slate-50"
                                         >
-                                            {usuario.activo
-                                                ? 'Activo'
-                                                : 'Inactivo'}
-                                        </span>
-                                    </div>
+                                            <td className="px-6 py-4">
+                                                <div className="flex min-w-0 items-center gap-3">
+                                                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-100 text-sm font-bold text-emerald-800">
+                                                        {iniciales}
+                                                    </div>
 
-                                    <div className="mt-5 space-y-3 border-y border-slate-100 py-4 text-sm">
-                                        <div className="flex justify-between gap-4">
-                                            <span className="text-slate-400">
-                                                Rol
-                                            </span>
+                                                    <div className="min-w-0">
+                                                        <p className="max-w-56 truncate font-bold text-slate-900">
+                                                            {usuario.nombre}
+                                                        </p>
 
-                                            <span className="font-semibold capitalize text-slate-700">
+                                                        <p className="truncate text-sm text-slate-500">
+                                                            @{usuario.usuario}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </td>
+
+                                            <td className="px-6 py-4">
+                                                <p className="max-w-52 truncate text-sm font-semibold text-slate-700">
+                                                    {usuario.correo ||
+                                                        'Sin correo'}
+                                                </p>
+                                            </td>
+
+                                            <td className="px-6 py-4 text-sm font-semibold capitalize text-slate-700">
                                                 {usuario.rol}
-                                            </span>
-                                        </div>
+                                            </td>
 
-                                        <div className="flex justify-between gap-4">
-                                            <span className="text-slate-400">
-                                                Área
-                                            </span>
+                                            <td className="px-6 py-4">
+                                                <p className="max-w-48 truncate text-sm font-semibold text-slate-700">
+                                                    {usuario.area_nombre ||
+                                                        'Sin área'}
+                                                </p>
+                                            </td>
 
-                                            <span className="truncate font-semibold text-slate-700">
-                                                {usuario.area_nombre ||
-                                                    'Sin área'}
-                                            </span>
-                                        </div>
+                                            <td className="px-6 py-4">
+                                                <p className="max-w-48 truncate text-sm font-semibold text-slate-700">
+                                                    {usuario.linea_nombre ||
+                                                        'No aplica'}
+                                                </p>
+                                            </td>
 
-                                        <div className="flex justify-between gap-4">
-                                            <span className="text-slate-400">
-                                                Línea
-                                            </span>
-
-                                            <span className="truncate font-semibold text-slate-700">
-                                                {usuario.linea_nombre ||
-                                                    'No aplica'}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-4 flex items-center justify-between">
-                                        {usuario.es_lider ? (
-                                            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
-                                                Líder de área
-                                            </span>
-                                        ) : (
-                                            <span className="text-xs text-slate-400">
-                                                Colaborador
-                                            </span>
-                                        )}
-
-                                        <div className="flex items-center gap-1">
-                                            <button
-                                                type="button"
-                                                title="Editar"
-                                                onClick={() =>
-                                                    abrirEditarUsuario(usuario)
-                                                }
-                                                className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
-                                            >
-                                                <Edit3 size={17} />
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                title="Cambiar contraseña"
-                                                onClick={() =>
-                                                    abrirCambioPassword(usuario)
-                                                }
-                                                className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 transition hover:bg-amber-50 hover:text-amber-700"
-                                            >
-                                                <KeyRound size={17} />
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                title={
-                                                    usuario.activo
-                                                        ? 'Desactivar'
-                                                        : 'Activar'
-                                                }
-                                                onClick={() =>
-                                                    cambiarEstado(usuario)
-                                                }
-                                                className={[
-                                                    'grid h-9 w-9 place-items-center rounded-lg transition',
-                                                    usuario.activo
-                                                        ? 'text-emerald-600 hover:bg-red-50 hover:text-red-600'
-                                                        : 'text-slate-400 hover:bg-emerald-50 hover:text-emerald-700'
-                                                ].join(' ')}
-                                            >
-                                                {usuario.activo ? (
-                                                    <ToggleRight size={21} />
+                                            <td className="px-6 py-4">
+                                                {usuario.es_lider ? (
+                                                    <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                                                        Líder de área
+                                                    </span>
                                                 ) : (
-                                                    <ToggleLeft size={21} />
+                                                    <span className="text-sm text-slate-500">
+                                                        Colaborador
+                                                    </span>
                                                 )}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </article>
-                            );
-                        })}
+                                            </td>
+
+                                            <td className="px-6 py-4">
+                                                <span
+                                                    className={[
+                                                        'inline-flex rounded-full px-2.5 py-1 text-xs font-bold',
+                                                        usuario.activo
+                                                            ? 'bg-emerald-50 text-emerald-700'
+                                                            : 'bg-slate-100 text-slate-500'
+                                                    ].join(' ')}
+                                                >
+                                                    {usuario.activo
+                                                        ? 'Activo'
+                                                        : 'Inactivo'}
+                                                </span>
+                                            </td>
+
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center justify-start gap-1">
+                                                    <button
+                                                        type="button"
+                                                        title="Editar"
+                                                        onClick={() =>
+                                                            abrirEditarUsuario(usuario)
+                                                        }
+                                                        className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
+                                                    >
+                                                        <Edit3 size={17} />
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        title="Cambiar contraseña"
+                                                        onClick={() =>
+                                                            abrirCambioPassword(usuario)
+                                                        }
+                                                        className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 transition hover:bg-amber-50 hover:text-amber-700"
+                                                    >
+                                                        <KeyRound size={17} />
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        title={
+                                                            usuario.activo
+                                                                ? 'Desactivar'
+                                                                : 'Activar'
+                                                        }
+                                                        onClick={() =>
+                                                            cambiarEstado(usuario)
+                                                        }
+                                                        className={[
+                                                            'grid h-9 w-9 place-items-center rounded-lg transition',
+                                                            usuario.activo
+                                                                ? 'text-emerald-600 hover:bg-red-50 hover:text-red-600'
+                                                                : 'text-slate-400 hover:bg-emerald-50 hover:text-emerald-700'
+                                                        ].join(' ')}
+                                                    >
+                                                        {usuario.activo ? (
+                                                            <ToggleRight size={21} />
+                                                        ) : (
+                                                            <ToggleLeft size={21} />
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
                     </div>
                 )}
             </section>

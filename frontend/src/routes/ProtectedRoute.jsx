@@ -5,7 +5,9 @@ import {
 
 import useAuth from '../hooks/useAuth';
 
-function ProtectedRoute() {
+function ProtectedRoute({
+    requiereResponsableArea = false
+}) {
     const {
         usuario,
         cargando
@@ -29,6 +31,19 @@ function ProtectedRoute() {
         return (
             <Navigate
                 to="/login"
+                replace
+            />
+        );
+    }
+
+    if (
+        requiereResponsableArea &&
+        usuario.rol !== 'administrador' &&
+        !usuario.es_lider
+    ) {
+        return (
+            <Navigate
+                to="/incidencias"
                 replace
             />
         );

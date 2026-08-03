@@ -3,7 +3,6 @@ import {
     Layers3,
     Plus,
     Search,
-    ShieldCheck,
     ToggleLeft,
     ToggleRight
 } from 'lucide-react';
@@ -137,34 +136,9 @@ function AreasPage() {
 
     return (
         <div className="mx-auto max-w-[1600px] space-y-6">
-            <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                    <div className="flex items-center gap-2 text-sm font-bold text-emerald-700">
-                        <ShieldCheck size={18} />
-                        Administración
-                    </div>
-
-                    <h2 className="mt-2 text-2xl font-bold text-slate-950">
-                        Áreas operativas
-                    </h2>
-
-                    <p className="mt-1 text-sm text-slate-500">
-                        Crea, edita y administra las áreas del sistema.
-                    </p>
-                </div>
-
-                <button
-                    type="button"
-                    onClick={abrirNuevaArea}
-                    className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 font-bold text-white shadow-lg shadow-emerald-700/15 transition hover:bg-emerald-600"
-                >
-                    <Plus size={19} />
-                    Nueva área
-                </button>
-            </section>
 
             <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="grid gap-4 md:grid-cols-[1fr_220px]">
+                <div className="grid gap-4 md:grid-cols-[1fr_220px_auto]">
                     <div className="relative">
                         <Search
                             size={19}
@@ -198,6 +172,15 @@ function AreasPage() {
                             Eliminadas
                         </option>
                     </select>
+
+                    <button
+                        type="button"
+                        onClick={abrirNuevaArea}
+                        className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 font-bold text-white shadow-lg shadow-emerald-700/15 transition hover:bg-emerald-600"
+                    >
+                        <Plus size={19} />
+                        Nueva área
+                    </button>
                 </div>
             </section>
 
@@ -254,92 +237,104 @@ function AreasPage() {
                         </div>
                     </div>
                 ) : (
-                    <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                        {areas.map((area) => (
-                            <article
-                                key={area.id}
-                                className="rounded-2xl border border-slate-200 p-5 transition hover:border-emerald-200 hover:shadow-md"
-                            >
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="flex min-w-0 items-center gap-3">
-                                        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-800">
-                                            <Layers3 size={22} />
-                                        </div>
+                    <div className="custom-scrollbar overflow-x-auto">
+                        <table className="w-full min-w-[820px] table-fixed text-left">
+                            <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-400">
+                                <tr>
+                                    <th className="w-[26%] px-6 py-3">Área</th>
+                                    <th className="w-[34%] px-6 py-3">Descripción</th>
+                                    <th className="w-[14%] px-6 py-3">Estado</th>
+                                    <th className="w-[14%] px-6 py-3">Creación</th>
+                                    <th className="w-[12%] px-6 py-3">Acciones</th>
+                                </tr>
+                            </thead>
 
-                                        <div className="min-w-0">
-                                            <h4 className="truncate font-bold text-slate-900">
-                                                {area.nombre}
-                                            </h4>
-
-                                            <p className="text-sm text-slate-500">
-                                                Creada {formatearFecha(area.fecha_creacion)}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <span
-                                        className={[
-                                            'rounded-full px-2.5 py-1 text-xs font-bold',
-                                            area.activo
-                                                ? 'bg-emerald-50 text-emerald-700'
-                                                : 'bg-slate-100 text-slate-500'
-                                        ].join(' ')}
+                            <tbody className="divide-y divide-slate-100">
+                                {areas.map((area) => (
+                                    <tr
+                                        key={area.id}
+                                        className="transition hover:bg-slate-50"
                                     >
-                                        {area.activo
-                                            ? 'Activa'
-                                            : 'Eliminada'}
-                                    </span>
-                                </div>
+                                        <td className="px-6 py-4">
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-800">
+                                                    <Layers3 size={19} />
+                                                </div>
 
-                                <p className="mt-5 min-h-16 text-sm leading-6 text-slate-500">
-                                    {area.descripcion ||
-                                        'Sin descripción registrada.'}
-                                </p>
+                                                <p className="max-w-56 truncate font-bold text-slate-900">
+                                                    {area.nombre}
+                                                </p>
+                                            </div>
+                                        </td>
 
-                                <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
-                                    <span className="text-xs font-semibold text-slate-400">
-                                        ID #{area.id}
-                                    </span>
+                                        <td className="px-6 py-4">
+                                            <p className="line-clamp-2 max-w-md text-sm leading-6 text-slate-500">
+                                                {area.descripcion ||
+                                                    'Sin descripcion registrada.'}
+                                            </p>
+                                        </td>
 
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            type="button"
-                                            title="Editar"
-                                            onClick={() =>
-                                                abrirEditarArea(area)
-                                            }
-                                            className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
-                                        >
-                                            <Edit3 size={17} />
-                                        </button>
+                                        <td className="px-6 py-4">
+                                            <span
+                                                className={[
+                                                    'inline-flex rounded-full px-2.5 py-1 text-xs font-bold',
+                                                    area.activo
+                                                        ? 'bg-emerald-50 text-emerald-700'
+                                                        : 'bg-slate-100 text-slate-500'
+                                                ].join(' ')}
+                                            >
+                                                {area.activo
+                                                    ? 'Activa'
+                                                    : 'Eliminada'}
+                                            </span>
+                                        </td>
 
-                                        <button
-                                            type="button"
-                                            title={
-                                                area.activo
-                                                    ? 'Eliminar'
-                                                    : 'Reactivar'
-                                            }
-                                            onClick={() =>
-                                                cambiarEstado(area)
-                                            }
-                                            className={[
-                                                'grid h-9 w-9 place-items-center rounded-lg transition',
-                                                area.activo
-                                                    ? 'text-emerald-600 hover:bg-red-50 hover:text-red-600'
-                                                    : 'text-slate-400 hover:bg-emerald-50 hover:text-emerald-700'
-                                            ].join(' ')}
-                                        >
-                                            {area.activo ? (
-                                                <ToggleRight size={21} />
-                                            ) : (
-                                                <ToggleLeft size={21} />
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
-                            </article>
-                        ))}
+                                        <td className="px-6 py-4 text-sm font-semibold text-slate-600">
+                                            {formatearFecha(area.fecha_creacion)}
+                                        </td>
+
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center justify-start gap-1">
+                                                <button
+                                                    type="button"
+                                                    title="Editar"
+                                                    onClick={() =>
+                                                        abrirEditarArea(area)
+                                                    }
+                                                    className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
+                                                >
+                                                    <Edit3 size={17} />
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    title={
+                                                        area.activo
+                                                            ? 'Eliminar'
+                                                            : 'Reactivar'
+                                                    }
+                                                    onClick={() =>
+                                                        cambiarEstado(area)
+                                                    }
+                                                    className={[
+                                                        'grid h-9 w-9 place-items-center rounded-lg transition',
+                                                        area.activo
+                                                            ? 'text-emerald-600 hover:bg-red-50 hover:text-red-600'
+                                                            : 'text-slate-400 hover:bg-emerald-50 hover:text-emerald-700'
+                                                    ].join(' ')}
+                                                >
+                                                    {area.activo ? (
+                                                        <ToggleRight size={21} />
+                                                    ) : (
+                                                        <ToggleLeft size={21} />
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 )}
             </section>

@@ -28,6 +28,8 @@ import {
     obtenerTiempoTranscurrido
 } from '../../utils/fechas';
 
+import useAuth from '../../hooks/useAuth';
+
 const etiquetasEstado = {
     nueva: 'Nueva',
     asignada: 'Asignada',
@@ -60,11 +62,14 @@ function IncidenciaDetallePanel({
     onCerrar,
     onActualizado
 }) {
+    const { usuario } = useAuth();
+
     const [detalle, setDetalle] = useState(null);
     const [cargando, setCargando] = useState(false);
     const [guardando, setGuardando] = useState(false);
     const [error, setError] = useState('');
     const [comentario, setComentario] = useState('');
+    const [solucionAplicada, setSolucionAplicada] = useState('');
     const [responsableId, setResponsableId] = useState('');
 
     useEffect(() => {
@@ -85,6 +90,9 @@ function IncidenciaDetallePanel({
                 setResponsableId(
                     respuesta.data.responsable_usuario_id || ''
                 );
+                setSolucionAplicada(
+                    respuesta.data.solucion_aplicada || ''
+                );
             } catch (errorSolicitud) {
                 console.error(
                     'Error al cargar incidencia:',
@@ -104,23 +112,45 @@ function IncidenciaDetallePanel({
     }, [incidencia?.id, abierto]);
 
     const usuariosResponsables = useMemo(() => {
-        if (!detalle?.area_responsable_id) {
+        if (usuario?.rol === 'administrador') {
             return usuarios;
         }
 
+        if (!detalle?.area_responsable_id) {
+            return [];
+        }
+
         return usuarios.filter(
-            (usuario) =>
-                Number(usuario.area_id) ===
-                    Number(detalle.area_responsable_id) ||
-                usuario.rol === 'administrador'
+            (candidato) =>
+                Number(candidato.area_id) ===
+                Number(detalle.area_responsable_id)
         );
-    }, [usuarios, detalle?.area_responsable_id]);
+    }, [usuarios, detalle?.area_responsable_id, usuario?.rol]);
 
     if (!abierto || !incidencia) {
         return null;
     }
 
     const incidenciaActual = detalle || incidencia;
+    const puedeAsignarResponsable =
+        usuario?.rol === 'administrador' ||
+        Number(usuario?.area_id) ===
+            Number(incidenciaActual.area_responsable_id);
+    const puedeIniciar = incidenciaActual.estado === 'asignada';
+    const puedeResolver = incidenciaActual.estado === 'en_proceso';
+    const puedeCapturarSolucion = [
+        'asignada',
+        'en_proceso'
+    ].includes(incidenciaActual.estado);
+    const puedeCerrar = incidenciaActual.estado === 'resuelta';
+    const puedeCancelar = [
+        'nueva',
+        'asignada',
+        'en_proceso'
+    ].includes(incidenciaActual.estado);
+    const ayudaIniciar = incidenciaActual.estado === 'nueva'
+        ? 'Asigna un responsable antes de iniciar atencion.'
+        : 'La atencion ya fue iniciada o el caso esta cerrado.';
 
     async function refrescarDetalle() {
         const respuesta = await obtenerIncidenciaPorId(
@@ -130,6 +160,9 @@ function IncidenciaDetallePanel({
         setDetalle(respuesta.data);
         setResponsableId(
             respuesta.data.responsable_usuario_id || ''
+        );
+        setSolucionAplicada(
+            respuesta.data.solucion_aplicada || ''
         );
         await onActualizado();
     }
@@ -158,19 +191,56 @@ function IncidenciaDetallePanel({
         }
     }
 
-    async function cambiarEstado(estado) {
+    async function cambiarEstado(estado, datos = {}) {
         try {
             setGuardando(true);
             setError('');
             await cambiarEstadoIncidencia(
                 incidenciaActual.id,
-                estado
+                estado,
+                datos
             );
             await refrescarDetalle();
         } catch (errorSolicitud) {
             setError(
                 errorSolicitud.response?.data?.message ||
                 'No fue posible cambiar el estado.'
+            );
+        } finally {
+            setGuardando(false);
+        }
+    }
+
+    async function resolver() {
+        if (!solucionAplicada.trim()) {
+            setError('Registra la solucion aplicada antes de resolver.');
+            return;
+        }
+
+        try {
+            setGuardando(true);
+            setError('');
+
+            if (incidenciaActual.estado === 'asignada') {
+                await cambiarEstadoIncidencia(
+                    incidenciaActual.id,
+                    'en_proceso'
+                );
+            }
+
+            await cambiarEstadoIncidencia(
+                incidenciaActual.id,
+                'resuelta',
+                {
+                    solucion_aplicada: solucionAplicada.trim()
+                }
+            );
+
+            await refrescarDetalle();
+        } catch (errorSolicitud) {
+            setError(
+                errorSolicitud.response?.data?.message ||
+                'No fue posible resolver la incidencia.'
             );
         } finally {
             setGuardando(false);
@@ -274,11 +344,11 @@ function IncidenciaDetallePanel({
 
                                 <div className="mt-5 grid gap-3 sm:grid-cols-2">
                                     <Info
-                                        etiqueta="Área origen"
+                                        etiqueta="Área que reporta"
                                         valor={incidenciaActual.area_origen_nombre || 'Sin origen'}
                                     />
                                     <Info
-                                        etiqueta="Área responsable"
+                                        etiqueta="Área que atiende"
                                         valor={incidenciaActual.area_nombre || 'Sin área'}
                                     />
                                     <Info
@@ -314,6 +384,17 @@ function IncidenciaDetallePanel({
                                         valor={obtenerTiempoTranscurrido(incidenciaActual.fecha_creacion)}
                                     />
                                 </div>
+
+                                {incidenciaActual.solucion_aplicada && (
+                                    <div className="mt-5 rounded-2xl bg-emerald-50 p-4">
+                                        <p className="text-xs font-bold uppercase text-emerald-700">
+                                            Solucion aplicada
+                                        </p>
+                                        <p className="mt-2 leading-6 text-slate-700">
+                                            {incidenciaActual.solucion_aplicada}
+                                        </p>
+                                    </div>
+                                )}
                             </section>
 
                             <section className="rounded-3xl border border-slate-200 p-5">
@@ -351,13 +432,22 @@ function IncidenciaDetallePanel({
                                     <button
                                         type="button"
                                         onClick={asignar}
-                                        disabled={guardando}
+                                        disabled={
+                                            guardando ||
+                                            !puedeAsignarResponsable
+                                        }
                                         className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 font-bold text-white transition hover:bg-emerald-600 disabled:opacity-60"
                                     >
                                         <UserPlus size={18} />
                                         Asignar
                                     </button>
                                 </div>
+
+                                {!puedeAsignarResponsable && (
+                                    <p className="mt-3 text-sm text-slate-500">
+                                        Solo el área que atiende o un administrador puede asignar responsable.
+                                    </p>
+                                )}
                             </section>
 
                             <section className="rounded-3xl border border-slate-200 p-5">
@@ -365,22 +455,22 @@ function IncidenciaDetallePanel({
                                     Acciones
                                 </h3>
 
-                                <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                                <div className="mt-4 grid gap-3 sm:grid-cols-3">
                                     <Accion
-                                        texto="Iniciar"
+                                        texto="Iniciar atencion"
                                         icono={PlayCircle}
                                         onClick={() =>
                                             cambiarEstado('en_proceso')
                                         }
-                                        disabled={guardando}
-                                    />
-                                    <Accion
-                                        texto="Resolver"
-                                        icono={CheckCircle2}
-                                        onClick={() =>
-                                            cambiarEstado('resuelta')
+                                        disabled={
+                                            guardando ||
+                                            !puedeIniciar
                                         }
-                                        disabled={guardando}
+                                        ayuda={
+                                            puedeIniciar
+                                                ? ''
+                                                : ayudaIniciar
+                                        }
                                     />
                                     <Accion
                                         texto="Cerrar"
@@ -388,7 +478,15 @@ function IncidenciaDetallePanel({
                                         onClick={() =>
                                             cambiarEstado('cerrada')
                                         }
-                                        disabled={guardando}
+                                        disabled={
+                                            guardando ||
+                                            !puedeCerrar
+                                        }
+                                        ayuda={
+                                            puedeCerrar
+                                                ? ''
+                                                : 'Disponible despues de resolver la incidencia.'
+                                        }
                                     />
                                     <Accion
                                         texto="Cancelar"
@@ -396,10 +494,56 @@ function IncidenciaDetallePanel({
                                         onClick={() =>
                                             cambiarEstado('cancelada')
                                         }
-                                        disabled={guardando}
+                                        disabled={
+                                            guardando ||
+                                            !puedeCancelar
+                                        }
+                                        ayuda={
+                                            puedeCancelar
+                                                ? ''
+                                                : 'La incidencia ya esta en un estado final.'
+                                        }
                                         peligro
                                     />
                                 </div>
+
+                                {puedeCapturarSolucion && (
+                                    <div className="mt-5 rounded-2xl bg-slate-50 p-4">
+                                        <label
+                                            htmlFor="solucion-aplicada"
+                                            className="text-sm font-bold text-slate-800"
+                                        >
+                                            Solucion aplicada
+                                        </label>
+                                        <textarea
+                                            id="solucion-aplicada"
+                                            value={solucionAplicada}
+                                            onChange={(evento) =>
+                                                setSolucionAplicada(
+                                                    evento.target.value
+                                                )
+                                            }
+                                            rows={3}
+                                            disabled={guardando}
+                                            placeholder="Describe que se hizo para resolver la incidencia."
+                                            className="mt-3 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={resolver}
+                                            disabled={
+                                                guardando ||
+                                                !solucionAplicada.trim()
+                                            }
+                                            className="mt-3 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 font-bold text-white transition hover:bg-emerald-600 disabled:opacity-60"
+                                        >
+                                            <CheckCircle2 size={18} />
+                                            {puedeResolver
+                                                ? 'Resolver'
+                                                : 'Iniciar y resolver'}
+                                        </button>
+                                    </div>
+                                )}
                             </section>
 
                             <section className="rounded-3xl border border-slate-200 p-5">
@@ -532,6 +676,7 @@ function Accion({
     icono: Icono,
     onClick,
     disabled,
+    ayuda = '',
     peligro = false
 }) {
     return (
@@ -539,8 +684,9 @@ function Accion({
             type="button"
             onClick={onClick}
             disabled={disabled}
+            title={ayuda}
             className={[
-                'inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 font-bold transition disabled:opacity-60',
+                'inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 font-bold transition disabled:cursor-not-allowed disabled:opacity-50',
                 peligro
                     ? 'bg-red-50 text-red-700 hover:bg-red-100'
                     : 'bg-slate-900 text-white hover:bg-slate-800'

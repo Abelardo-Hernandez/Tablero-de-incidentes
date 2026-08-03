@@ -12,11 +12,13 @@ import IncidenciasPage from './pages/incidencias/IncidenciasPage';
 
 import LoginPage from './pages/auth/LoginPage';
 import AreasPage from './pages/areas/AreasPage';
+import ConfiguracionPage from './pages/configuracion/ConfiguracionPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import LineasPage from './pages/lineas/LineasPage';
 import NotFoundPage from './pages/NotFoundPage';
-import PlaceholderPage from './pages/PlaceholderPage';
+import ReportesPage from './pages/reportes/ReportesPage';
 import TurnosPage from './pages/turnos/TurnosPage';
+import TvPage from './pages/tv/TvPage';
 
 import ProtectedRoute from './routes/ProtectedRoute';
 
@@ -32,9 +34,15 @@ function App() {
                 <Route element={<ProtectedRoute />}>
                     <Route element={<MainLayout />}>
                         <Route
-                            index
-                            element={<DashboardPage />}
-                        />
+                            element={
+                                <ProtectedRoute requiereResponsableArea />
+                            }
+                        >
+                            <Route
+                                index
+                                element={<DashboardPage />}
+                            />
+                        </Route>
 
                         <Route
                             path="incidencias"
@@ -62,23 +70,24 @@ function App() {
                         />
 
                         <Route
-                            path="reportes"
                             element={
-                                <PlaceholderPage
-                                    titulo="Reportes"
-                                    descripcion="Indicadores, análisis de tiempos y exportaciones."
-                                />
+                                <ProtectedRoute requiereResponsableArea />
                             }
+                        >
+                            <Route
+                                path="reportes"
+                                element={<ReportesPage />}
+                            />
+                        </Route>
+
+                        <Route
+                            path="tv"
+                            element={<TvPage />}
                         />
 
                         <Route
                             path="configuracion"
-                            element={
-                                <PlaceholderPage
-                                    titulo="Configuración"
-                                    descripcion="Personalización del sistema, videos y parámetros generales."
-                                />
-                            }
+                            element={<ConfiguracionPage />}
                         />
                     </Route>
                 </Route>
