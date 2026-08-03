@@ -1,1 +1,7 @@
-frontend/public/videos/dashboard.mp4
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.m4v
+*.wmv
