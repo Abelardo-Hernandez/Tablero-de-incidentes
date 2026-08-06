@@ -1,13 +1,18 @@
 import {
     AlertTriangle,
+    ArrowLeft,
     ChevronDown,
     Clock3,
     Download,
     FileDown,
     Filter,
+    History,
+    MessageSquare,
     Printer,
+    RotateCcw,
     Search,
-    Trophy
+    Trophy,
+    X
 } from 'lucide-react';
 
 import {
@@ -20,16 +25,15 @@ import {
 import {
     obtenerAreasActivas,
     obtenerLineasActivas,
+    obtenerTiposFallaActivos,
     obtenerTurnosActivos
 } from '../../services/catalogos.service';
 
 import {
-    obtenerIncidencias
+    obtenerIncidenciaPorId,
+    obtenerIncidencias,
+    obtenerResponsablesIncidencias
 } from '../../services/incidencias.service';
-
-import {
-    obtenerUsuarios
-} from '../../services/usuarios.service';
 
 import useAuth from '../../hooks/useAuth';
 
@@ -60,13 +64,27 @@ const estados = {
     cancelada: 'Cancelada'
 };
 
-const tipos = {
+const tiposBase = {
     falla_equipo: 'Falla de equipo',
     falta_material: 'Falta de material',
     calidad: 'Calidad',
     seguridad: 'Seguridad',
     proceso: 'Proceso',
     otro: 'Otro'
+};
+
+const filtrosIniciales = {
+    fecha_inicial: '',
+    fecha_final: '',
+    area_id: '',
+    linea_id: '',
+    responsable_id: '',
+    estado: '',
+    prioridad: '',
+    turno_id: '',
+    usuario_reporta_id: '',
+    tipo: '',
+    buscar: ''
 };
 
 function minutosEntre(inicio, fin) {
@@ -224,6 +242,7 @@ function ReportesPage() {
     const [areas, setAreas] = useState([]);
     const [lineas, setLineas] = useState([]);
     const [turnos, setTurnos] = useState([]);
+    const [tiposFalla, setTiposFalla] = useState([]);
     const [usuarios, setUsuarios] = useState([]);
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState('');
@@ -231,22 +250,15 @@ function ReportesPage() {
         campo: 'fecha_creacion',
         direccion: 'desc'
     });
-    const [filtrosAbiertos, setFiltrosAbiertos] =
+    const [busquedaAvanzada, setBusquedaAvanzada] =
         useState(false);
+    const [detalleSeleccionado, setDetalleSeleccionado] =
+        useState(null);
+    const [cargandoDetalle, setCargandoDetalle] =
+        useState(false);
+    const [errorDetalle, setErrorDetalle] = useState('');
 
-    const [filtros, setFiltros] = useState({
-        fecha_inicial: '',
-        fecha_final: '',
-        area_id: '',
-        linea_id: '',
-        responsable_id: '',
-        estado: '',
-        prioridad: '',
-        turno_id: '',
-        usuario_reporta_id: '',
-        tipo: '',
-        buscar: ''
-    });
+    const [filtros, setFiltros] = useState(filtrosIniciales);
 
     const cargarDatos = useCallback(async () => {
         try {
@@ -258,15 +270,15 @@ function ReportesPage() {
                 respuestaAreas,
                 respuestaLineas,
                 respuestaTurnos,
+                respuestaTiposFalla,
                 respuestaUsuarios
             ] = await Promise.allSettled([
                 obtenerIncidencias(),
                 obtenerAreasActivas(),
                 obtenerLineasActivas(),
                 obtenerTurnosActivos(),
-                obtenerUsuarios({
-                    activo: true
-                })
+                obtenerTiposFallaActivos(),
+                obtenerResponsablesIncidencias()
             ]);
 
             if (
@@ -287,6 +299,12 @@ function ReportesPage() {
 
             if (respuestaTurnos.status === 'fulfilled') {
                 setTurnos(respuestaTurnos.value.data || []);
+            }
+
+            if (respuestaTiposFalla.status === 'fulfilled') {
+                setTiposFalla(
+                    respuestaTiposFalla.value.data || []
+                );
             }
 
             if (respuestaUsuarios.status === 'fulfilled') {
@@ -312,6 +330,19 @@ function ReportesPage() {
         cargarDatos();
     }, [cargarDatos]);
 
+    const tipos = useMemo(
+        () => ({
+            ...tiposBase,
+            ...Object.fromEntries(
+                tiposFalla.map((tipo) => [
+                    tipo.clave,
+                    tipo.nombre
+                ])
+            )
+        }),
+        [tiposFalla]
+    );
+
     function manejarFiltro(evento) {
         const {
             name,
@@ -322,6 +353,15 @@ function ReportesPage() {
             ...actual,
             [name]: value
         }));
+    }
+
+    function limpiarFiltros() {
+        setFiltros(filtrosIniciales);
+        setOrden({
+            campo: 'fecha_creacion',
+            direccion: 'desc'
+        });
+        cerrarDetalle();
     }
 
     const incidenciasFiltradas = useMemo(() => {
@@ -437,14 +477,34 @@ function ReportesPage() {
                 .join(' ')
                 .toLowerCase()
                 .includes(texto);
-        });
+            });
     }, [incidencias, filtros, esAdministrador]);
+
+    const incidenciasUltimas48Horas = useMemo(() => {
+        const limite = Date.now() - (48 * 60 * 60 * 1000);
+
+        return incidencias.filter((incidencia) => {
+            if (!incidencia.fecha_creacion) {
+                return false;
+            }
+
+            const fecha = new Date(
+                incidencia.fecha_creacion
+            ).getTime();
+
+            return !Number.isNaN(fecha) && fecha >= limite;
+        });
+    }, [incidencias]);
+
+    const incidenciasBase = busquedaAvanzada
+        ? incidenciasFiltradas
+        : incidenciasUltimas48Horas;
 
     const incidenciasOrdenadas = useMemo(() => {
         const multiplicador =
             orden.direccion === 'asc' ? 1 : -1;
 
-        return [...incidenciasFiltradas].sort((a, b) => {
+        return [...incidenciasBase].sort((a, b) => {
             const obtenerValor = (incidencia) => {
                 if (orden.campo === 'tiempo_total') {
                     return calcularTiempoTotal(incidencia) || 0;
@@ -495,10 +555,10 @@ function ReportesPage() {
                 }
             ) * multiplicador;
         });
-    }, [incidenciasFiltradas, orden]);
+    }, [incidenciasBase, orden]);
 
     const kpis = useMemo(() => {
-        const tiempos = incidenciasFiltradas
+        const tiempos = incidenciasBase
             .map((incidencia) =>
                 minutosEntre(
                     incidencia.fecha_inicio_atencion ||
@@ -510,8 +570,8 @@ function ReportesPage() {
             )
             .filter((valor) => valor !== null);
 
-        const total = incidenciasFiltradas.length;
-        const resueltas = incidenciasFiltradas.filter(
+        const total = incidenciasBase.length;
+        const resueltas = incidenciasBase.filter(
             (incidencia) =>
                 estadosResueltos.includes(incidencia.estado)
         ).length;
@@ -527,7 +587,7 @@ function ReportesPage() {
 
         return {
             total,
-            abiertas: incidenciasFiltradas.filter(
+            abiertas: incidenciasBase.filter(
                 (incidencia) =>
                     estadosAbiertos.includes(incidencia.estado)
             ).length,
@@ -542,34 +602,34 @@ function ReportesPage() {
             porcentajeAtendidas: total
                 ? Math.round((resueltas / total) * 100)
                 : 0,
-            criticas: incidenciasFiltradas.filter(
+            criticas: incidenciasBase.filter(
                 (incidencia) =>
                     incidencia.prioridad === 'critica'
             ).length
         };
-    }, [incidenciasFiltradas]);
+    }, [incidenciasBase]);
 
     const graficas = useMemo(
         () => ({
             lineas: agruparPor(
-                incidenciasFiltradas,
+                incidenciasBase,
                 (incidencia) => incidencia.linea_nombre
             ).slice(0, 6),
             areas: agruparPor(
-                incidenciasFiltradas,
+                incidenciasBase,
                 (incidencia) => incidencia.area_nombre
             ).slice(0, 6),
             prioridad: agruparPor(
-                incidenciasFiltradas,
+                incidenciasBase,
                 (incidencia) =>
                     prioridades[incidencia.prioridad]
             ),
             estado: agruparPor(
-                incidenciasFiltradas,
+                incidenciasBase,
                 (incidencia) => estados[incidencia.estado]
             ),
             responsables: agruparPor(
-                incidenciasFiltradas.filter(
+                incidenciasBase.filter(
                     (incidencia) =>
                         incidencia.responsable_nombre
                 ),
@@ -577,8 +637,39 @@ function ReportesPage() {
                     incidencia.responsable_nombre
             ).slice(0, 5)
         }),
-        [incidenciasFiltradas]
+        [incidenciasBase]
     );
+
+    async function abrirDetalle(incidencia) {
+        try {
+            setCargandoDetalle(true);
+            setErrorDetalle('');
+            setDetalleSeleccionado(incidencia);
+
+            const respuesta = await obtenerIncidenciaPorId(
+                incidencia.id
+            );
+
+            setDetalleSeleccionado(respuesta.data);
+        } catch (errorSolicitud) {
+            console.error(
+                'Error al cargar detalle historico:',
+                errorSolicitud
+            );
+
+            setErrorDetalle(
+                errorSolicitud.response?.data?.message ||
+                    'No fue posible cargar el detalle de la incidencia.'
+            );
+        } finally {
+            setCargandoDetalle(false);
+        }
+    }
+
+    function cerrarDetalle() {
+        setDetalleSeleccionado(null);
+        setErrorDetalle('');
+    }
 
     function cambiarOrden(campo) {
         setOrden((actual) => ({
@@ -890,137 +981,43 @@ function ReportesPage() {
         ventana.print();
     }
 
-    return (
-        <div className="mx-auto max-w-[1800px] space-y-6">
+    if (busquedaAvanzada) {
+        return (
+            <div className="mx-auto max-w-[1800px] space-y-6">
+                <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setBusquedaAvanzada(false);
+                                    cerrarDetalle();
+                                }}
+                                className="inline-flex items-center gap-2 text-sm font-bold text-emerald-700 transition hover:text-emerald-600"
+                            >
+                                <ArrowLeft size={17} />
+                                Volver al histórico
+                            </button>
 
-            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <button
-                    type="button"
-                    onClick={() =>
-                        setFiltrosAbiertos((abierto) => !abierto)
-                    }
-                    className="flex w-full items-center justify-between gap-3 text-left font-bold text-slate-950"
-                    aria-expanded={filtrosAbiertos}
-                >
-                    <span className="flex items-center gap-2">
-                        <Filter
-                            size={18}
-                            className="text-emerald-700"
-                        />
-                        Filtros
-                    </span>
+                            <h2 className="mt-3 text-2xl font-bold text-slate-950">
+                                Búsqueda avanzada
+                            </h2>
 
-                    <ChevronDown
-                        size={20}
-                        className={[
-                            'text-slate-500 transition-transform',
-                            filtrosAbiertos ? 'rotate-180' : ''
-                        ].join(' ')}
-                    />
-                </button>
-
-                {filtrosAbiertos && (
-                    <div className="mt-4 space-y-4">
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                            <input
-                                type="date"
-                                name="fecha_inicial"
-                                value={filtros.fecha_inicial}
-                                onChange={manejarFiltro}
-                                className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
-                            />
-
-                            <input
-                                type="date"
-                                name="fecha_final"
-                                value={filtros.fecha_final}
-                                onChange={manejarFiltro}
-                                className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
-                            />
-
-                            <Select
-                                name="area_id"
-                                value={filtros.area_id}
-                                onChange={manejarFiltro}
-                                placeholder="Área que atiende"
-                                opciones={areas}
-                            />
-
-                            <Select
-                                name="linea_id"
-                                value={filtros.linea_id}
-                                onChange={manejarFiltro}
-                                placeholder="Línea"
-                                opciones={lineas}
-                            />
-
-                            <Select
-                                name="responsable_id"
-                                value={filtros.responsable_id}
-                                onChange={manejarFiltro}
-                                placeholder="Responsable"
-                                opciones={usuarios}
-                            />
-
-                            <SelectSimple
-                                name="estado"
-                                value={filtros.estado}
-                                onChange={manejarFiltro}
-                                placeholder="Estado"
-                                opciones={estados}
-                            />
-
-                            <SelectSimple
-                                name="prioridad"
-                                value={filtros.prioridad}
-                                onChange={manejarFiltro}
-                                placeholder="Prioridad"
-                                opciones={prioridades}
-                            />
-
-                            <Select
-                                name="turno_id"
-                                value={filtros.turno_id}
-                                onChange={manejarFiltro}
-                                placeholder="Turno"
-                                opciones={turnos}
-                            />
-
-                            {esAdministrador && (
-                                <Select
-                                    name="usuario_reporta_id"
-                                    value={filtros.usuario_reporta_id}
-                                    onChange={manejarFiltro}
-                                    placeholder="Usuario que reportó"
-                                    opciones={usuarios}
-                                />
-                            )}
-
-                            <SelectSimple
-                                name="tipo"
-                                value={filtros.tipo}
-                                onChange={manejarFiltro}
-                                placeholder="Tipo"
-                                opciones={tipos}
-                            />
-
-                            <div className="relative md:col-span-2 xl:col-span-5">
-                                <Search
-                                    size={18}
-                                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                                />
-
-                                <input
-                                    name="buscar"
-                                    value={filtros.buscar}
-                                    onChange={manejarFiltro}
-                                    placeholder="Buscar por folio, título, descripción, área, línea o responsable..."
-                                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-12 pr-4 outline-none focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
-                                />
-                            </div>
+                            <p className="mt-1 text-sm text-slate-500">
+                                Consulta incidencias por filtros y abre el detalle completo con timeline y comentarios.
+                            </p>
                         </div>
 
                         <div className="flex flex-col gap-3 sm:flex-row">
+                            <button
+                                type="button"
+                                onClick={limpiarFiltros}
+                                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 font-bold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                            >
+                                <RotateCcw size={18} />
+                                Limpiar filtros
+                            </button>
+
                             <button
                                 type="button"
                                 onClick={exportarExcel}
@@ -1040,15 +1037,131 @@ function ReportesPage() {
                             </button>
                         </div>
                     </div>
+
+                    <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                        <input
+                            type="date"
+                            name="fecha_inicial"
+                            value={filtros.fecha_inicial}
+                            onChange={manejarFiltro}
+                            className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                        />
+
+                        <input
+                            type="date"
+                            name="fecha_final"
+                            value={filtros.fecha_final}
+                            onChange={manejarFiltro}
+                            className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                        />
+
+                        <Select
+                            name="area_id"
+                            value={filtros.area_id}
+                            onChange={manejarFiltro}
+                            placeholder="Área que atiende"
+                            opciones={areas}
+                        />
+
+                        <Select
+                            name="linea_id"
+                            value={filtros.linea_id}
+                            onChange={manejarFiltro}
+                            placeholder="Línea"
+                            opciones={lineas}
+                        />
+
+                        <Select
+                            name="responsable_id"
+                            value={filtros.responsable_id}
+                            onChange={manejarFiltro}
+                            placeholder="Responsable"
+                            opciones={usuarios}
+                        />
+
+                        <SelectSimple
+                            name="estado"
+                            value={filtros.estado}
+                            onChange={manejarFiltro}
+                            placeholder="Estado"
+                            opciones={estados}
+                        />
+
+                        <SelectSimple
+                            name="prioridad"
+                            value={filtros.prioridad}
+                            onChange={manejarFiltro}
+                            placeholder="Prioridad"
+                            opciones={prioridades}
+                        />
+
+                        <Select
+                            name="turno_id"
+                            value={filtros.turno_id}
+                            onChange={manejarFiltro}
+                            placeholder="Turno"
+                            opciones={turnos}
+                        />
+
+                        {esAdministrador && (
+                            <Select
+                                name="usuario_reporta_id"
+                                value={filtros.usuario_reporta_id}
+                                onChange={manejarFiltro}
+                                placeholder="Usuario que reportó"
+                                opciones={usuarios}
+                            />
+                        )}
+
+                        <SelectSimple
+                            name="tipo"
+                            value={filtros.tipo}
+                            onChange={manejarFiltro}
+                            placeholder="Tipo"
+                            opciones={tipos}
+                        />
+
+                        <div className="relative md:col-span-2 xl:col-span-5">
+                            <Search
+                                size={18}
+                                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                            />
+
+                            <input
+                                name="buscar"
+                                value={filtros.buscar}
+                                onChange={manejarFiltro}
+                                placeholder="Buscar por folio, título, descripción, área, línea o responsable..."
+                                className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-12 pr-4 outline-none focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                            />
+                        </div>
+                    </div>
+                </section>
+
+                {error && (
+                    <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
+                        {error}
+                    </section>
                 )}
 
-            </section>
+                <ListaBusqueda
+                    incidencias={incidenciasOrdenadas}
+                    cargando={cargando}
+                    onSeleccionar={abrirDetalle}
+                />
 
-            {error && (
-                <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
-                    {error}
-                </section>
-            )}
+                <DetalleHistoricoPanel
+                    incidencia={detalleSeleccionado}
+                    cargando={cargandoDetalle}
+                    error={errorDetalle}
+                    onCerrar={cerrarDetalle}
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div className="mx-auto max-w-[1800px] space-y-6">
 
             <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
                 <Kpi titulo="Registradas" valor={kpis.total} icono={FileDown} />
@@ -1080,6 +1193,33 @@ function ReportesPage() {
                     orden={orden}
                     cambiarOrden={cambiarOrden}
                 />
+            </section>
+
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <div className="flex items-center gap-2 text-sm font-bold text-emerald-700">
+                            <Filter size={18} />
+                            Búsqueda avanzada
+                        </div>
+
+                        <p className="mt-2 text-sm text-slate-500">
+                            Consulta por fechas, áreas, responsables, estado, prioridad o texto libre.
+                        </p>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setBusquedaAvanzada(true)}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 font-bold text-white transition hover:bg-slate-800"
+                    >
+                        Abrir búsqueda
+                        <ChevronDown
+                            size={18}
+                            className="-rotate-90"
+                        />
+                    </button>
+                </div>
             </section>
         </div>
     );
@@ -1399,6 +1539,284 @@ function Tabla({
                 </table>
             </div>
         </article>
+    );
+}
+
+function ListaBusqueda({
+    incidencias,
+    cargando,
+    onSeleccionar
+}) {
+    return (
+        <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
+                <div>
+                    <h3 className="font-bold text-slate-950">
+                        Resultados
+                    </h3>
+
+                    <p className="text-sm text-slate-500">
+                        Selecciona una incidencia para consultar timeline y comentarios.
+                    </p>
+                </div>
+
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-bold text-slate-600">
+                    {incidencias.length}
+                </span>
+            </div>
+
+            <div className="divide-y divide-slate-100">
+                {cargando ? (
+                    <p className="px-5 py-8 text-center text-sm text-slate-500">
+                        Cargando incidencias...
+                    </p>
+                ) : incidencias.length === 0 ? (
+                    <p className="px-5 py-8 text-center text-sm text-slate-500">
+                        No hay incidencias con los filtros seleccionados.
+                    </p>
+                ) : incidencias.map((incidencia) => (
+                    <button
+                        key={incidencia.id}
+                        type="button"
+                        onClick={() => onSeleccionar(incidencia)}
+                        className="grid w-full gap-3 px-5 py-4 text-left transition hover:bg-slate-50 lg:grid-cols-[170px_1fr_170px_150px]"
+                    >
+                        <div>
+                            <p className="font-bold text-emerald-700">
+                                {incidencia.folio}
+                            </p>
+
+                            <p className="text-xs text-slate-500">
+                                {formatearFecha(incidencia.fecha_creacion)} · {formatearHora(incidencia.fecha_creacion)}
+                            </p>
+                        </div>
+
+                        <div className="min-w-0">
+                            <p className="truncate font-bold text-slate-950">
+                                {incidencia.titulo}
+                            </p>
+
+                            <p className="mt-1 truncate text-sm text-slate-500">
+                                {incidencia.linea_nombre || 'Sin línea'} · {incidencia.area_nombre || 'Sin área'}
+                            </p>
+                        </div>
+
+                        <div>
+                            <p className="text-xs font-bold uppercase text-slate-400">
+                                Responsable
+                            </p>
+
+                            <p className="truncate text-sm font-semibold text-slate-700">
+                                {incidencia.responsable_nombre || 'Sin responsable'}
+                            </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 lg:justify-end">
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
+                                {estados[incidencia.estado] || incidencia.estado}
+                            </span>
+
+                            <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">
+                                {prioridades[incidencia.prioridad] || incidencia.prioridad}
+                            </span>
+                        </div>
+                    </button>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+function DetalleHistoricoPanel({
+    incidencia,
+    cargando,
+    error,
+    onCerrar
+}) {
+    if (!incidencia) {
+        return null;
+    }
+
+    const historial = incidencia.historial || [];
+    const comentarios = incidencia.comentarios || [];
+
+    return (
+        <div className="fixed inset-0 z-[90]">
+            <button
+                type="button"
+                aria-label="Cerrar detalle"
+                onClick={onCerrar}
+                className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
+            />
+
+            <aside className="custom-scrollbar absolute right-0 top-0 h-full w-full max-w-3xl overflow-y-auto bg-white shadow-2xl">
+                <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-5 backdrop-blur">
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                            <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">
+                                {incidencia.folio ||
+                                    `INC-${incidencia.id}`}
+                            </p>
+
+                            <h2 className="mt-2 text-2xl font-bold text-slate-950">
+                                {incidencia.titulo}
+                            </h2>
+
+                            <p className="mt-2 text-sm text-slate-500">
+                                {estados[incidencia.estado] || incidencia.estado} · {prioridades[incidencia.prioridad] || incidencia.prioridad}
+                            </p>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={onCerrar}
+                            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                            aria-label="Cerrar"
+                        >
+                            <X size={20} />
+                        </button>
+                    </div>
+                </header>
+
+                <div className="space-y-5 p-6">
+                    {cargando && (
+                        <div className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-500">
+                            Cargando detalle...
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                            {error}
+                        </div>
+                    )}
+
+                    <section className="grid gap-3 md:grid-cols-2">
+                        <InfoDetalle
+                            etiqueta="Fecha"
+                            valor={`${formatearFecha(incidencia.fecha_creacion)} ${formatearHora(incidencia.fecha_creacion)}`}
+                        />
+                        <InfoDetalle
+                            etiqueta="Área"
+                            valor={incidencia.area_nombre || 'Sin área'}
+                        />
+                        <InfoDetalle
+                            etiqueta="Línea"
+                            valor={incidencia.linea_nombre || 'Sin línea'}
+                        />
+                        <InfoDetalle
+                            etiqueta="Responsable"
+                            valor={incidencia.responsable_nombre || 'Sin responsable'}
+                        />
+                    </section>
+
+                    <section className="rounded-2xl border border-slate-200 p-4">
+                        <h3 className="font-bold text-slate-950">
+                            Descripción
+                        </h3>
+
+                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                            {incidencia.descripcion || 'Sin descripción.'}
+                        </p>
+                    </section>
+
+                    <section className="rounded-2xl border border-slate-200 p-4">
+                        <div className="flex items-center gap-2">
+                            <History
+                                size={18}
+                                className="text-emerald-700"
+                            />
+                            <h3 className="font-bold text-slate-950">
+                                Timeline
+                            </h3>
+                        </div>
+
+                        <div className="mt-4 space-y-3">
+                            {historial.length === 0 ? (
+                                <p className="text-sm text-slate-500">
+                                    Sin movimientos registrados.
+                                </p>
+                            ) : historial.map((evento) => (
+                                <div
+                                    key={evento.id}
+                                    className="rounded-2xl bg-slate-50 p-4"
+                                >
+                                    <p className="font-bold text-slate-800">
+                                        {evento.accion}
+                                    </p>
+
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        {evento.usuario_nombre || 'Sistema'} · {formatearFecha(evento.fecha_creacion)} {formatearHora(evento.fecha_creacion)}
+                                    </p>
+
+                                    {(evento.estado_anterior || evento.estado_nuevo) && (
+                                        <p className="mt-2 text-sm text-slate-600">
+                                            {evento.estado_anterior || 'Sin estado'} → {evento.estado_nuevo || 'Sin estado'}
+                                        </p>
+                                    )}
+
+                                    {evento.comentario && (
+                                        <p className="mt-2 text-sm text-slate-600">
+                                            {evento.comentario}
+                                        </p>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    <section className="rounded-2xl border border-slate-200 p-4">
+                        <div className="flex items-center gap-2">
+                            <MessageSquare
+                                size={18}
+                                className="text-emerald-700"
+                            />
+                            <h3 className="font-bold text-slate-950">
+                                Comentarios
+                            </h3>
+                        </div>
+
+                        <div className="mt-4 space-y-3">
+                            {comentarios.length === 0 ? (
+                                <p className="text-sm text-slate-500">
+                                    Sin comentarios registrados.
+                                </p>
+                            ) : comentarios.map((comentario) => (
+                                <div
+                                    key={comentario.id}
+                                    className="rounded-2xl bg-slate-50 p-4"
+                                >
+                                    <p className="text-sm text-slate-700">
+                                        {comentario.comentario}
+                                    </p>
+
+                                    <p className="mt-2 text-xs text-slate-400">
+                                        {comentario.usuario_nombre || 'Usuario'} · {formatearFecha(comentario.fecha_creacion)} {formatearHora(comentario.fecha_creacion)}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                </div>
+            </aside>
+        </div>
+    );
+}
+
+function InfoDetalle({
+    etiqueta,
+    valor
+}) {
+    return (
+        <div className="rounded-2xl bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase text-slate-400">
+                {etiqueta}
+            </p>
+
+            <p className="mt-1 font-semibold text-slate-800">
+                {valor}
+            </p>
+        </div>
     );
 }
 

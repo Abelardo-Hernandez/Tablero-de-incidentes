@@ -1,4 +1,5 @@
 import {
+    ArrowLeft,
     Edit3,
     KeyRound,
     Plus,
@@ -14,6 +15,10 @@ import {
     useEffect,
     useState
 } from 'react';
+
+import {
+    Link
+} from 'react-router';
 
 import {
     cambiarEstadoUsuario,
@@ -178,7 +183,17 @@ function UsuariosPage() {
 
     return (
         <div className="mx-auto max-w-[1600px] space-y-6">
-            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+                <Link
+                    to="/configuracion"
+                    title="Volver a configuraciÃ³n"
+                    aria-label="Volver a configuraciÃ³n"
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                >
+                    <ArrowLeft size={20} />
+                </Link>
+
+                <section className="min-w-0 flex-1 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="grid gap-4 md:grid-cols-[1fr_220px_auto]">
                     <div className="relative">
                         <Search
@@ -223,7 +238,8 @@ function UsuariosPage() {
                         Nuevo usuario
                     </button>
                 </div>
-            </section>
+                </section>
+            </div>
 
             {error && (
                 <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
@@ -279,17 +295,17 @@ function UsuariosPage() {
                     </div>
                 ) : (
                     <div className="custom-scrollbar overflow-x-auto">
-                        <table className="w-full min-w-[1220px] table-fixed text-left">
+                        <table className="w-full min-w-[1120px] table-fixed text-left">
                             <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-400">
                                 <tr>
-                                    <th className="w-[20%] px-6 py-3">Usuario</th>
-                                    <th className="w-[18%] px-6 py-3">Correo</th>
-                                    <th className="w-[9%] px-6 py-3">Rol</th>
-                                    <th className="w-[14%] px-6 py-3">Área</th>
-                                    <th className="w-[14%] px-6 py-3">Línea</th>
-                                    <th className="w-[12%] px-6 py-3">Responsabilidad</th>
-                                    <th className="w-[7%] px-6 py-3">Estado</th>
-                                    <th className="w-[6%] px-6 py-3">Acciones</th>
+                                    <th className="w-[18%] px-4 py-2.5">Usuario</th>
+                                    <th className="w-[16%] px-4 py-2.5">Correo</th>
+                                    <th className="w-[9%] px-4 py-2.5">Rol</th>
+                                    <th className="w-[13%] px-4 py-2.5">Área</th>
+                                    <th className="w-[13%] px-4 py-2.5">Línea</th>
+                                    <th className="w-[12%] px-4 py-2.5">Responsabilidad</th>
+                                    <th className="w-[7%] px-4 py-2.5">Estado</th>
+                                    <th className="w-[12%] py-2.5 pl-4 pr-8">Acciones</th>
                                 </tr>
                             </thead>
 
@@ -308,14 +324,14 @@ function UsuariosPage() {
                                             key={usuario.id}
                                             className="transition hover:bg-slate-50"
                                         >
-                                            <td className="px-6 py-4">
-                                                <div className="flex min-w-0 items-center gap-3">
-                                                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-100 text-sm font-bold text-emerald-800">
+                                            <td className="px-4 py-2.5">
+                                                <div className="flex min-w-0 items-center gap-2.5">
+                                                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-100 text-xs font-bold text-emerald-800">
                                                         {iniciales}
                                                     </div>
 
                                                     <div className="min-w-0">
-                                                        <p className="max-w-56 truncate font-bold text-slate-900">
+                                                        <p className="max-w-52 truncate text-sm font-bold text-slate-900">
                                                             {usuario.nombre}
                                                         </p>
 
@@ -326,34 +342,34 @@ function UsuariosPage() {
                                                 </div>
                                             </td>
 
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2.5">
                                                 <p className="max-w-52 truncate text-sm font-semibold text-slate-700">
                                                     {usuario.correo ||
                                                         'Sin correo'}
                                                 </p>
                                             </td>
 
-                                            <td className="px-6 py-4 text-sm font-semibold capitalize text-slate-700">
+                                            <td className="px-4 py-2.5 text-sm font-semibold capitalize text-slate-700">
                                                 {usuario.rol}
                                             </td>
 
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2.5">
                                                 <p className="max-w-48 truncate text-sm font-semibold text-slate-700">
                                                     {usuario.area_nombre ||
                                                         'Sin área'}
                                                 </p>
                                             </td>
 
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2.5">
                                                 <p className="max-w-48 truncate text-sm font-semibold text-slate-700">
                                                     {usuario.linea_nombre ||
                                                         'No aplica'}
                                                 </p>
                                             </td>
 
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2.5">
                                                 {usuario.es_lider ? (
-                                                    <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                                                    <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
                                                         Líder de área
                                                     </span>
                                                 ) : (
@@ -363,10 +379,10 @@ function UsuariosPage() {
                                                 )}
                                             </td>
 
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2.5">
                                                 <span
                                                     className={[
-                                                        'inline-flex rounded-full px-2.5 py-1 text-xs font-bold',
+                                                        'inline-flex rounded-full px-2 py-0.5 text-xs font-bold',
                                                         usuario.activo
                                                             ? 'bg-emerald-50 text-emerald-700'
                                                             : 'bg-slate-100 text-slate-500'
@@ -378,7 +394,7 @@ function UsuariosPage() {
                                                 </span>
                                             </td>
 
-                                            <td className="px-6 py-4">
+                                            <td className="py-2.5 pl-4 pr-8">
                                                 <div className="flex items-center justify-start gap-1">
                                                     <button
                                                         type="button"
@@ -386,9 +402,9 @@ function UsuariosPage() {
                                                         onClick={() =>
                                                             abrirEditarUsuario(usuario)
                                                         }
-                                                        className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
+                                                        className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
                                                     >
-                                                        <Edit3 size={17} />
+                                                        <Edit3 size={16} />
                                                     </button>
 
                                                     <button
@@ -397,9 +413,9 @@ function UsuariosPage() {
                                                         onClick={() =>
                                                             abrirCambioPassword(usuario)
                                                         }
-                                                        className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 transition hover:bg-amber-50 hover:text-amber-700"
+                                                        className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-amber-50 hover:text-amber-700"
                                                     >
-                                                        <KeyRound size={17} />
+                                                        <KeyRound size={16} />
                                                     </button>
 
                                                     <button
@@ -413,16 +429,16 @@ function UsuariosPage() {
                                                             cambiarEstado(usuario)
                                                         }
                                                         className={[
-                                                            'grid h-9 w-9 place-items-center rounded-lg transition',
+                                                            'grid h-8 w-8 place-items-center rounded-lg transition',
                                                             usuario.activo
                                                                 ? 'text-emerald-600 hover:bg-red-50 hover:text-red-600'
                                                                 : 'text-slate-400 hover:bg-emerald-50 hover:text-emerald-700'
                                                         ].join(' ')}
                                                     >
                                                         {usuario.activo ? (
-                                                            <ToggleRight size={21} />
+                                                            <ToggleRight size={20} />
                                                         ) : (
-                                                            <ToggleLeft size={21} />
+                                                            <ToggleLeft size={20} />
                                                         )}
                                                     </button>
                                                 </div>

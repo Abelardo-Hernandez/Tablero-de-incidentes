@@ -15,8 +15,24 @@ import useAuth from '../../hooks/useAuth';
 
 import {
     iniciarSesion,
+    obtenerResumenDiarioLogin,
     obtenerToken
 } from '../../services/auth.service';
+
+function formatearMinutos(minutos) {
+    if (minutos === null || minutos === undefined) {
+        return 'Sin datos';
+    }
+
+    if (minutos < 60) {
+        return `${minutos} min`;
+    }
+
+    const horas = Math.floor(minutos / 60);
+    const minutosRestantes = minutos % 60;
+
+    return `${horas} h ${minutosRestantes} min`;
+}
 
 function LoginPage() {
     const navigate = useNavigate();
@@ -37,6 +53,11 @@ function LoginPage() {
 
     const [cargando, setCargando] = useState(false);
     const [error, setError] = useState('');
+    const [resumenDiario, setResumenDiario] = useState({
+        cargando: true,
+        reportesHoy: 0,
+        promedioAtencionMinutos: null
+    });
 
     useEffect(() => {
         if (
@@ -52,6 +73,48 @@ function LoginPage() {
         cargandoSesion,
         navigate
     ]);
+
+    useEffect(() => {
+        let activo = true;
+
+        async function cargarResumenDiario() {
+            try {
+                const respuesta =
+                    await obtenerResumenDiarioLogin();
+
+                if (!activo) {
+                    return;
+                }
+
+                setResumenDiario({
+                    cargando: false,
+                    reportesHoy:
+                        respuesta.data?.reportes_hoy || 0,
+                    promedioAtencionMinutos:
+                        respuesta.data
+                            ?.promedio_atencion_minutos ?? null
+                });
+            } catch (errorSolicitud) {
+                console.warn(
+                    'No fue posible cargar resumen diario:',
+                    errorSolicitud
+                );
+
+                if (activo) {
+                    setResumenDiario((actual) => ({
+                        ...actual,
+                        cargando: false
+                    }));
+                }
+            }
+        }
+
+        cargarResumenDiario();
+
+        return () => {
+            activo = false;
+        };
+    }, []);
 
     function manejarCambio(evento) {
         const {
@@ -173,24 +236,30 @@ function LoginPage() {
                             en un solo lugar.
                         </p>
 
-                        <div className="mt-8 grid max-w-xl grid-cols-3 gap-4">
+                        <div className="mt-8 grid max-w-xl grid-cols-2 gap-4">
                             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur">
                                 <p className="text-2xl font-bold text-white">
-                                    24/7
+                                    {resumenDiario.cargando
+                                        ? '...'
+                                        : resumenDiario.reportesHoy}
                                 </p>
 
                                 <p className="mt-1 text-xs text-slate-400">
-                                    Monitoreo operativo
+                                    Reportes de hoy
                                 </p>
                             </div>
 
                             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur">
                                 <p className="text-2xl font-bold text-white">
-                                    Tiempo real
+                                    {resumenDiario.cargando
+                                        ? '...'
+                                        : formatearMinutos(
+                                            resumenDiario.promedioAtencionMinutos
+                                        )}
                                 </p>
 
                                 <p className="mt-1 text-xs text-slate-400">
-                                    Actualización automática
+                                    Tiempo promedio de atenciÃ³n
                                 </p>
                             </div>
 

@@ -19,6 +19,7 @@ import {
 import {
     obtenerAreasActivas,
     obtenerLineasActivas,
+    obtenerTiposFallaActivos,
     obtenerTurnosActivos
 } from '../../services/catalogos.service';
 
@@ -80,6 +81,7 @@ function IncidenciasPage() {
     const [areas, setAreas] = useState([]);
     const [lineas, setLineas] = useState([]);
     const [turnos, setTurnos] = useState([]);
+    const [tiposFalla, setTiposFalla] = useState([]);
     const [usuarios, setUsuarios] = useState([]);
 
     const [cargando, setCargando] = useState(true);
@@ -141,6 +143,7 @@ function IncidenciasPage() {
                     obtenerAreasActivas(),
                     obtenerLineasActivas(),
                     obtenerTurnosActivos(),
+                    obtenerTiposFallaActivos(),
                     obtenerResponsablesIncidencias()
                 ]);
 
@@ -157,7 +160,11 @@ function IncidenciasPage() {
                 }
 
                 if (resultados[3].status === 'fulfilled') {
-                    setUsuarios(resultados[3].value.data || []);
+                    setTiposFalla(resultados[3].value.data || []);
+                }
+
+                if (resultados[4].status === 'fulfilled') {
+                    setUsuarios(resultados[4].value.data || []);
                 }
             } catch (errorSolicitud) {
                 console.error(
@@ -363,24 +370,14 @@ function IncidenciasPage() {
                         <option value="">
                             Tipo
                         </option>
-                        <option value="falla_equipo">
-                            Falla equipo
-                        </option>
-                        <option value="falta_material">
-                            Falta material
-                        </option>
-                        <option value="calidad">
-                            Calidad
-                        </option>
-                        <option value="seguridad">
-                            Seguridad
-                        </option>
-                        <option value="proceso">
-                            Proceso
-                        </option>
-                        <option value="otro">
-                            Otro
-                        </option>
+                        {tiposFalla.map((tipo) => (
+                            <option
+                                key={tipo.clave}
+                                value={tipo.clave}
+                            >
+                                {tipo.nombre}
+                            </option>
+                        ))}
                     </select>
 
                     <select
@@ -492,6 +489,7 @@ function IncidenciasPage() {
                 areas={areas}
                 lineas={lineas}
                 turnos={turnos}
+                tiposFalla={tiposFalla}
                 onCerrar={() => setModalAbierto(false)}
                 onGuardado={cargarIncidencias}
             />

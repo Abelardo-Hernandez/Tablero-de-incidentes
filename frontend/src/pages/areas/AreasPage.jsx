@@ -1,4 +1,5 @@
 import {
+    ArrowLeft,
     Edit3,
     Layers3,
     Plus,
@@ -12,6 +13,10 @@ import {
     useEffect,
     useState
 } from 'react';
+
+import {
+    Link
+} from 'react-router';
 
 import {
     cambiarEstadoArea,
@@ -136,8 +141,17 @@ function AreasPage() {
 
     return (
         <div className="mx-auto max-w-[1600px] space-y-6">
+            <div className="flex items-start gap-3">
+                <Link
+                    to="/configuracion"
+                    title="Volver a configuraciÃ³n"
+                    aria-label="Volver a configuraciÃ³n"
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                >
+                    <ArrowLeft size={20} />
+                </Link>
 
-            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <section className="min-w-0 flex-1 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="grid gap-4 md:grid-cols-[1fr_220px_auto]">
                     <div className="relative">
                         <Search
@@ -182,7 +196,8 @@ function AreasPage() {
                         Nueva área
                     </button>
                 </div>
-            </section>
+                </section>
+            </div>
 
             {error && (
                 <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
@@ -241,11 +256,11 @@ function AreasPage() {
                         <table className="w-full min-w-[820px] table-fixed text-left">
                             <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-400">
                                 <tr>
-                                    <th className="w-[26%] px-6 py-3">Área</th>
-                                    <th className="w-[34%] px-6 py-3">Descripción</th>
-                                    <th className="w-[14%] px-6 py-3">Estado</th>
-                                    <th className="w-[14%] px-6 py-3">Creación</th>
-                                    <th className="w-[12%] px-6 py-3">Acciones</th>
+                                    <th className="w-[26%] px-6 py-2.5">Área</th>
+                                    <th className="w-[34%] px-6 py-2.5">Descripción</th>
+                                    <th className="w-[14%] px-6 py-2.5">Estado</th>
+                                    <th className="w-[14%] px-6 py-2.5">Creación</th>
+                                    <th className="w-[12%] px-6 py-2.5">Acciones</th>
                                 </tr>
                             </thead>
 
@@ -255,10 +270,10 @@ function AreasPage() {
                                         key={area.id}
                                         className="transition hover:bg-slate-50"
                                     >
-                                        <td className="px-6 py-4">
+                                        <td className="px-6 py-2.5">
                                             <div className="flex min-w-0 items-center gap-3">
-                                                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-800">
-                                                    <Layers3 size={19} />
+                                                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-100 text-emerald-800">
+                                                    <Layers3 size={17} />
                                                 </div>
 
                                                 <p className="max-w-56 truncate font-bold text-slate-900">
@@ -267,17 +282,17 @@ function AreasPage() {
                                             </div>
                                         </td>
 
-                                        <td className="px-6 py-4">
-                                            <p className="line-clamp-2 max-w-md text-sm leading-6 text-slate-500">
+                                        <td className="px-6 py-2.5">
+                                            <p className="line-clamp-2 max-w-md text-sm leading-5 text-slate-500">
                                                 {area.descripcion ||
                                                     'Sin descripcion registrada.'}
                                             </p>
                                         </td>
 
-                                        <td className="px-6 py-4">
+                                        <td className="px-6 py-2.5">
                                             <span
                                                 className={[
-                                                    'inline-flex rounded-full px-2.5 py-1 text-xs font-bold',
+                                                    'inline-flex rounded-full px-2 py-0.5 text-xs font-bold',
                                                     area.activo
                                                         ? 'bg-emerald-50 text-emerald-700'
                                                         : 'bg-slate-100 text-slate-500'
@@ -289,11 +304,11 @@ function AreasPage() {
                                             </span>
                                         </td>
 
-                                        <td className="px-6 py-4 text-sm font-semibold text-slate-600">
+                                        <td className="px-6 py-2.5 text-sm font-semibold text-slate-600">
                                             {formatearFecha(area.fecha_creacion)}
                                         </td>
 
-                                        <td className="px-6 py-4">
+                                        <td className="px-6 py-2.5">
                                             <div className="flex items-center justify-start gap-1">
                                                 <button
                                                     type="button"
@@ -301,9 +316,9 @@ function AreasPage() {
                                                     onClick={() =>
                                                         abrirEditarArea(area)
                                                     }
-                                                    className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
+                                                    className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
                                                 >
-                                                    <Edit3 size={17} />
+                                                    <Edit3 size={16} />
                                                 </button>
 
                                                 <button
@@ -317,16 +332,16 @@ function AreasPage() {
                                                         cambiarEstado(area)
                                                     }
                                                     className={[
-                                                        'grid h-9 w-9 place-items-center rounded-lg transition',
+                                                        'grid h-8 w-8 place-items-center rounded-lg transition',
                                                         area.activo
                                                             ? 'text-emerald-600 hover:bg-red-50 hover:text-red-600'
                                                             : 'text-slate-400 hover:bg-emerald-50 hover:text-emerald-700'
                                                     ].join(' ')}
                                                 >
                                                     {area.activo ? (
-                                                        <ToggleRight size={21} />
+                                                        <ToggleRight size={20} />
                                                     ) : (
-                                                        <ToggleLeft size={21} />
+                                                        <ToggleLeft size={20} />
                                                     )}
                                                 </button>
                                             </div>

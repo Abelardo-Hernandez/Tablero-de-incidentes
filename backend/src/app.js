@@ -7,6 +7,7 @@ const areasRoutes = require('./routes/areas.routes');
 const lineasRoutes = require('./routes/lineas.routes');
 const turnosRoutes = require('./routes/turnos.routes');
 const incidenciasRoutes = require('./routes/incidencias.routes');
+const tiposFallaRoutes = require('./routes/tipos-falla.routes');
 const videosRoutes = require('./routes/videos.routes');
 
 const app = express();
@@ -27,6 +28,7 @@ app.use('/api/lineas', lineasRoutes);
 app.use('/api/turnos', turnosRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/incidencias', incidenciasRoutes);
+app.use('/api/tipos-falla', tiposFallaRoutes);
 app.use('/api/videos', videosRoutes);
 
 

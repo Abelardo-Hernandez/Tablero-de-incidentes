@@ -4,6 +4,11 @@ const {
     enviarCorreo
 } = require('../services/correo.service');
 
+const {
+    asegurarCatalogoTiposFalla,
+    tipoFallaActivoExiste
+} = require('../services/tipos-falla.service');
+
 const ESTADOS = [
     'nueva',
     'asignada',
@@ -47,15 +52,6 @@ const ACCIONES_ESTADO = {
     cerrada: 'Incidencia cerrada',
     cancelada: 'Incidencia cancelada'
 };
-
-const TIPOS = [
-    'falla_equipo',
-    'falta_material',
-    'calidad',
-    'seguridad',
-    'proceso',
-    'otro'
-];
 
 const PRIORIDADES = [
     'baja',
@@ -335,10 +331,6 @@ function validarPrioridad(prioridad) {
     return PRIORIDADES.includes(prioridad);
 }
 
-function validarTipo(tipo) {
-    return TIPOS.includes(tipo);
-}
-
 function validarEstado(estado) {
     return ESTADOS.includes(estado);
 }
@@ -359,6 +351,8 @@ function validarTransicionEstado(estadoAnterior, estadoNuevo) {
 
 async function obtenerIncidencias(req, res) {
     try {
+        await asegurarCatalogoTiposFalla();
+
         const {
             estado,
             tipo,
@@ -456,7 +450,8 @@ async function obtenerIncidencias(req, res) {
                 a.nombre AS area_nombre,
                 responsable.nombre AS responsable_nombre,
                 l.nombre AS linea_nombre,
-                t.nombre AS turno_nombre
+                t.nombre AS turno_nombre,
+                tf.nombre AS tipo_nombre
             FROM incidencias i
             LEFT JOIN usuarios reporta
                 ON reporta.id = i.usuario_creador_id
@@ -470,6 +465,8 @@ async function obtenerIncidencias(req, res) {
                 ON l.id = i.linea_id
             LEFT JOIN turnos t
                 ON t.id = i.turno_id
+            LEFT JOIN tipos_falla tf
+                ON tf.clave = i.tipo
             ${where}
             ORDER BY
                 FIELD(i.estado, 'nueva', 'asignada', 'en_proceso', 'resuelta', 'cerrada', 'cancelada'),
@@ -559,6 +556,8 @@ async function obtenerResponsables(req, res) {
 
 async function obtenerIncidenciaPorId(req, res) {
     try {
+        await asegurarCatalogoTiposFalla();
+
         const { id } = req.params;
 
         const [incidencias] = await db.query(
@@ -570,7 +569,8 @@ async function obtenerIncidenciaPorId(req, res) {
                 a.nombre AS area_nombre,
                 responsable.nombre AS responsable_nombre,
                 l.nombre AS linea_nombre,
-                t.nombre AS turno_nombre
+                t.nombre AS turno_nombre,
+                tf.nombre AS tipo_nombre
             FROM incidencias i
             LEFT JOIN usuarios reporta
                 ON reporta.id = i.usuario_creador_id
@@ -584,6 +584,8 @@ async function obtenerIncidenciaPorId(req, res) {
                 ON l.id = i.linea_id
             LEFT JOIN turnos t
                 ON t.id = i.turno_id
+            LEFT JOIN tipos_falla tf
+                ON tf.clave = i.tipo
             WHERE i.id = ?
             LIMIT 1
             `,
@@ -676,7 +678,9 @@ async function crearIncidencia(req, res) {
             });
         }
 
-        if (!validarTipo(tipo)) {
+        const tipoValido = await tipoFallaActivoExiste(tipo);
+
+        if (!tipoValido) {
             return res.status(400).json({
                 success: false,
                 message: 'El tipo seleccionado no es válido'

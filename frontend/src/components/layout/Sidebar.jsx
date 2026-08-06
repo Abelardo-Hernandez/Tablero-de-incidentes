@@ -1,15 +1,11 @@
 import {
     AlertTriangle,
-    Building2,
     ChevronLeft,
     ChevronRight,
-    Clock3,
     FileBarChart,
     LayoutDashboard,
     Monitor,
-    Settings,
-    Users,
-    Warehouse
+    Settings
 } from 'lucide-react';
 
 import {
@@ -38,30 +34,6 @@ const menuPrincipal = [
         ruta: '/incidencias',
         icono: AlertTriangle
     },
-    {
-        nombre: 'Usuarios',
-        ruta: '/usuarios',
-        icono: Users,
-        soloAdmin: true
-    },
-    {
-        nombre: 'Áreas',
-        ruta: '/areas',
-        icono: Building2,
-        soloAdmin: true
-    },
-    {
-        nombre: 'Líneas',
-        ruta: '/lineas',
-        icono: Warehouse,
-        soloAdmin: true
-    },
-    {
-        nombre: 'Turnos',
-        ruta: '/turnos',
-        icono: Clock3,
-        soloAdmin: true
-    }
 ];
 
 const menuSecundario = [

@@ -369,7 +369,11 @@ function IncidenciaDetallePanel({
                                     />
                                     <Info
                                         etiqueta="Tipo"
-                                        valor={etiquetasTipo[incidenciaActual.tipo] || 'Otro'}
+                                        valor={
+                                            incidenciaActual.tipo_nombre ||
+                                            etiquetasTipo[incidenciaActual.tipo] ||
+                                            'Otro'
+                                        }
                                     />
                                     <Info
                                         etiqueta="Detuvo línea"

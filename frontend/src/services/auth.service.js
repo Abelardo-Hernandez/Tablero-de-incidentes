@@ -31,6 +31,12 @@ export async function obtenerSesion() {
     return response.data;
 }
 
+export async function obtenerResumenDiarioLogin() {
+    const response = await api.get('/auth/resumen-diario');
+
+    return response.data;
+}
+
 export function obtenerUsuarioGuardado() {
     try {
         const usuario = localStorage.getItem(USER_KEY);

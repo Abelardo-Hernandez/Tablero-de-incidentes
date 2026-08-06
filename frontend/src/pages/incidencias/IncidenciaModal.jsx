@@ -37,6 +37,7 @@ function IncidenciaModal({
     areas,
     lineas,
     turnos,
+    tiposFalla = [],
     onCerrar,
     onGuardado
 }) {
@@ -55,8 +56,15 @@ function IncidenciaModal({
             return;
         }
 
+        const tipoInicial = tiposFalla.some(
+            (tipo) => tipo.clave === formularioInicial.tipo
+        )
+            ? formularioInicial.tipo
+            : tiposFalla[0]?.clave || formularioInicial.tipo;
+
         setFormulario({
             ...formularioInicial,
+            tipo: tipoInicial,
             prioridad:
                 cargarConfiguracion().prioridadDefault ||
                 formularioInicial.prioridad,
@@ -67,7 +75,7 @@ function IncidenciaModal({
                     : ''
         });
         setError('');
-    }, [abierto, usuario?.area_id, turnos]);
+    }, [abierto, usuario?.area_id, turnos, tiposFalla]);
 
     function manejarCambio(evento) {
         const {
@@ -231,24 +239,14 @@ function IncidenciaModal({
                                 disabled={guardando}
                                 className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
                             >
-                                <option value="falla_equipo">
-                                    Falla de equipo
-                                </option>
-                                <option value="falta_material">
-                                    Falta de material
-                                </option>
-                                <option value="calidad">
-                                    Calidad
-                                </option>
-                                <option value="seguridad">
-                                    Seguridad
-                                </option>
-                                <option value="proceso">
-                                    Proceso
-                                </option>
-                                <option value="otro">
-                                    Otro
-                                </option>
+                                {tiposFalla.map((tipo) => (
+                                    <option
+                                        key={tipo.clave}
+                                        value={tipo.clave}
+                                    >
+                                        {tipo.nombre}
+                                    </option>
+                                ))}
                             </select>
                         </div>
 

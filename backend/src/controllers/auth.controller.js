@@ -175,7 +175,53 @@ async function obtenerSesion(req, res) {
     }
 }
 
+async function obtenerResumenDiario(req, res) {
+    try {
+        const [resumen] = await db.query(
+            `
+            SELECT
+                COUNT(*) AS reportes_hoy,
+                ROUND(
+                    AVG(
+                        CASE
+                            WHEN fecha_inicio_atencion IS NOT NULL
+                            THEN TIMESTAMPDIFF(
+                                MINUTE,
+                                fecha_creacion,
+                                fecha_inicio_atencion
+                            )
+                            ELSE NULL
+                        END
+                    )
+                ) AS promedio_atencion_minutos
+            FROM incidencias
+            WHERE fecha_creacion >= CURDATE()
+              AND fecha_creacion < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+            `
+        );
+
+        return res.json({
+            success: true,
+            data: {
+                reportes_hoy: Number(resumen[0]?.reportes_hoy || 0),
+                promedio_atencion_minutos:
+                    resumen[0]?.promedio_atencion_minutos === null
+                        ? null
+                        : Number(resumen[0]?.promedio_atencion_minutos)
+            }
+        });
+    } catch (error) {
+        console.error('Error al obtener resumen diario:', error);
+
+        return res.status(500).json({
+            success: false,
+            message: 'No fue posible obtener el resumen diario'
+        });
+    }
+}
+
 module.exports = {
     iniciarSesion,
-    obtenerSesion
+    obtenerSesion,
+    obtenerResumenDiario
 };

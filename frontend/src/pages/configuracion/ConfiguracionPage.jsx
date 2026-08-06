@@ -9,6 +9,7 @@ import {
     Settings,
     ShieldCheck,
     SlidersHorizontal,
+    Tag,
     Users
 } from 'lucide-react';
 
@@ -25,6 +26,7 @@ import {
 import {
     obtenerAreas,
     obtenerLineas,
+    obtenerTiposFalla,
     obtenerTurnos
 } from '../../services/catalogos.service';
 
@@ -51,6 +53,7 @@ function ConfiguracionPage() {
         areas: [],
         lineas: [],
         turnos: [],
+        tiposFalla: [],
         usuarios: []
     });
 
@@ -64,11 +67,13 @@ function ConfiguracionPage() {
                     respuestaAreas,
                     respuestaLineas,
                     respuestaTurnos,
+                    respuestaTiposFalla,
                     respuestaUsuarios
                 ] = await Promise.all([
                     obtenerAreas(),
                     obtenerLineas(),
                     obtenerTurnos(),
+                    obtenerTiposFalla(),
                     obtenerUsuarios()
                 ]);
 
@@ -76,6 +81,8 @@ function ConfiguracionPage() {
                     areas: respuestaAreas.data || [],
                     lineas: respuestaLineas.data || [],
                     turnos: respuestaTurnos.data || [],
+                    tiposFalla:
+                        respuestaTiposFalla.data || [],
                     usuarios: respuestaUsuarios.data || []
                 });
             } catch (errorSolicitud) {
@@ -133,6 +140,15 @@ function ConfiguracionPage() {
                 ).length,
                 ruta: '/turnos',
                 icono: Clock3
+            },
+            {
+                titulo: 'Tipos de falla',
+                valor: catalogos.tiposFalla.length,
+                activos: catalogos.tiposFalla.filter(
+                    (tipo) => tipo.activo
+                ).length,
+                ruta: '/tipos-falla',
+                icono: Tag
             }
         ],
         [catalogos]
@@ -188,7 +204,7 @@ function ConfiguracionPage() {
                 </section>
             )}
 
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 {resumen.map((item) => {
                     const Icono = item.icono;
 

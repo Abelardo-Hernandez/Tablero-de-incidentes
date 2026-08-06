@@ -17,6 +17,7 @@ import DashboardPage from './pages/dashboard/DashboardPage';
 import LineasPage from './pages/lineas/LineasPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ReportesPage from './pages/reportes/ReportesPage';
+import TiposFallaPage from './pages/tipos-falla/TiposFallaPage';
 import TurnosPage from './pages/turnos/TurnosPage';
 import TvPage from './pages/tv/TvPage';
 
@@ -67,6 +68,11 @@ function App() {
                         <Route
                             path="turnos"
                             element={<TurnosPage />}
+                        />
+
+                        <Route
+                            path="tipos-falla"
+                            element={<TiposFallaPage />}
                         />
 
                         <Route

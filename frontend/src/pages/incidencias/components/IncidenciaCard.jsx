@@ -106,7 +106,9 @@ function IncidenciaCard({
                 )}
 
             <p className="mt-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
-                {etiquetasTipo[incidencia.tipo] || 'Otro'}
+                {incidencia.tipo_nombre ||
+                    etiquetasTipo[incidencia.tipo] ||
+                    'Otro'}
                 {incidencia.detuvo_linea ? ' · Detuvo línea' : ''}
             </p>
 

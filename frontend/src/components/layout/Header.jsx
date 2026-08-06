@@ -57,10 +57,15 @@ const nombresRutas = {
         subtitulo:
             'Horarios operativos de producción'
     },
-    '/reportes': {
-        titulo: 'Histórico',
+    '/tipos-falla': {
+        titulo: 'Tipos de falla',
         subtitulo:
-            'Indicadores, tiempos y exportación de datos'
+            'Catálogo de casos disponibles en reportes'
+    },
+    '/reportes': {
+        titulo: 'Histórico reciente',
+        subtitulo:
+            'Incidencias registradas durante las últimas 48 horas.'
     },
     '/configuracion': {
         titulo: 'Configuración',

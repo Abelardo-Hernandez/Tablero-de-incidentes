@@ -116,3 +116,45 @@ export async function cambiarEstadoTurno(id, activo) {
 
     return response.data;
 }
+
+export async function obtenerTiposFallaActivos() {
+    const response = await api.get('/tipos-falla', {
+        params: {
+            activo: true
+        }
+    });
+
+    return response.data;
+}
+
+export async function obtenerTiposFalla(filtros = {}) {
+    const response = await api.get('/tipos-falla', {
+        params: filtros
+    });
+
+    return response.data;
+}
+
+export async function crearTipoFalla(datos) {
+    const response = await api.post('/tipos-falla', datos);
+
+    return response.data;
+}
+
+export async function actualizarTipoFalla(id, datos) {
+    const response = await api.put(
+        `/tipos-falla/${id}`,
+        datos
+    );
+
+    return response.data;
+}
+
+export async function cambiarEstadoTipoFalla(id, activo) {
+    const response = await api.patch(
+        `/tipos-falla/${id}/estado`,
+        { activo }
+    );
+
+    return response.data;
+}
