@@ -253,13 +253,14 @@ function LineasPage() {
                     </div>
                 ) : (
                     <div className="custom-scrollbar overflow-x-auto">
-                        <table className="w-full min-w-[820px] table-fixed text-left">
+                        <table className="w-full min-w-[940px] table-fixed text-left">
                             <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-400">
                                 <tr>
-                                    <th className="w-[26%] px-6 py-2.5">Línea</th>
-                                    <th className="w-[34%] px-6 py-2.5">Descripción</th>
-                                    <th className="w-[14%] px-6 py-2.5">Estado</th>
-                                    <th className="w-[14%] px-6 py-2.5">Creación</th>
+                                    <th className="w-[22%] px-6 py-2.5">Línea</th>
+                                    <th className="w-[24%] px-6 py-2.5">Descripción</th>
+                                    <th className="w-[16%] px-6 py-2.5">Unidad</th>
+                                    <th className="w-[13%] px-6 py-2.5">Estado</th>
+                                    <th className="w-[13%] px-6 py-2.5">Creación</th>
                                     <th className="w-[12%] px-6 py-2.5">Acciones</th>
                                 </tr>
                             </thead>
@@ -286,6 +287,13 @@ function LineasPage() {
                                             <p className="line-clamp-2 max-w-md text-sm leading-5 text-slate-500">
                                                 {linea.descripcion ||
                                                     'Sin descripción registrada.'}
+                                            </p>
+                                        </td>
+
+                                        <td className="px-6 py-2.5">
+                                            <p className="max-w-44 truncate text-sm font-semibold text-slate-700">
+                                                {linea.unidad_negocio_nombre ||
+                                                    'Sin unidad'}
                                             </p>
                                         </td>
 

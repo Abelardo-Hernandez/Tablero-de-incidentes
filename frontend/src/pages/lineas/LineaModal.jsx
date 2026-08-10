@@ -10,15 +10,18 @@ import {
 } from 'react';
 
 import Modal from '../../components/ui/Modal';
+import useAuth from '../../hooks/useAuth';
 
 import {
     actualizarLinea,
-    crearLinea
+    crearLinea,
+    obtenerUnidadesNegocio
 } from '../../services/catalogos.service';
 
 const formularioInicial = {
     nombre: '',
     descripcion: '',
+    unidad_negocio_id: '',
     activo: true
 };
 
@@ -28,10 +31,13 @@ function LineaModal({
     onCerrar,
     onGuardado
 }) {
+    const { usuario } = useAuth();
+    const esSuperAdmin = usuario?.rol === 'super_admin';
     const editando = Boolean(lineaEditar?.id);
 
     const [formulario, setFormulario] =
         useState(formularioInicial);
+    const [unidadesNegocio, setUnidadesNegocio] = useState([]);
 
     const [guardando, setGuardando] = useState(false);
     const [error, setError] = useState('');
@@ -45,14 +51,43 @@ function LineaModal({
             setFormulario({
                 nombre: lineaEditar.nombre || '',
                 descripcion: lineaEditar.descripcion || '',
+                unidad_negocio_id:
+                    lineaEditar.unidad_negocio_id || '',
                 activo: Boolean(lineaEditar.activo)
             });
         } else {
-            setFormulario(formularioInicial);
+            setFormulario({
+                ...formularioInicial,
+                unidad_negocio_id:
+                    usuario?.unidad_negocio_id || ''
+            });
         }
 
         setError('');
-    }, [abierto, lineaEditar]);
+    }, [abierto, lineaEditar, usuario?.unidad_negocio_id]);
+
+    useEffect(() => {
+        async function cargarUnidades() {
+            if (!abierto || !esSuperAdmin) {
+                return;
+            }
+
+            try {
+                const respuesta = await obtenerUnidadesNegocio({
+                    activo: true
+                });
+
+                setUnidadesNegocio(respuesta.data || []);
+            } catch (errorSolicitud) {
+                console.error(
+                    'Error al cargar unidades:',
+                    errorSolicitud
+                );
+            }
+        }
+
+        cargarUnidades();
+    }, [abierto, esSuperAdmin]);
 
     function manejarCambio(evento) {
         const {
@@ -83,12 +118,27 @@ function LineaModal({
             return;
         }
 
+        if (
+            esSuperAdmin &&
+            !editando &&
+            !formulario.unidad_negocio_id
+        ) {
+            setError('Selecciona la unidad de negocio.');
+            return;
+        }
+
         const datos = {
             nombre: formulario.nombre.trim(),
             descripcion:
                 formulario.descripcion.trim() || null,
             activo: formulario.activo
         };
+
+        if (esSuperAdmin && formulario.unidad_negocio_id) {
+            datos.unidad_negocio_id = Number(
+                formulario.unidad_negocio_id
+            );
+        }
 
         try {
             setGuardando(true);
@@ -183,6 +233,39 @@ function LineaModal({
                             className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
                         />
                     </div>
+
+                    {esSuperAdmin && (
+                        <div>
+                            <label
+                                htmlFor="unidad_negocio_id"
+                                className="mb-2 block text-sm font-semibold text-slate-700"
+                            >
+                                Unidad de negocio
+                            </label>
+
+                            <select
+                                id="unidad_negocio_id"
+                                name="unidad_negocio_id"
+                                value={formulario.unidad_negocio_id}
+                                onChange={manejarCambio}
+                                disabled={guardando || editando}
+                                className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10 disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                                <option value="">
+                                    Selecciona unidad
+                                </option>
+
+                                {unidadesNegocio.map((unidad) => (
+                                    <option
+                                        key={unidad.id}
+                                        value={unidad.id}
+                                    >
+                                        {unidad.nombre}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
 
                     <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex items-center gap-3">

@@ -5,6 +5,7 @@ import {
 
 import {
     useEffect,
+    useMemo,
     useState
 } from 'react';
 
@@ -29,7 +30,8 @@ const formularioInicial = {
     area_origen_id: '',
     area_responsable_id: '',
     linea_id: '',
-    turno_id: ''
+    turno_id: '',
+    unidad_negocio_id: ''
 };
 
 function IncidenciaModal({
@@ -38,12 +40,14 @@ function IncidenciaModal({
     lineas,
     turnos,
     tiposFalla = [],
+    unidadesNegocio = [],
     onCerrar,
     onGuardado
 }) {
     const {
         usuario
     } = useAuth();
+    const esSuperAdmin = usuario?.rol === 'super_admin';
 
     const [formulario, setFormulario] =
         useState(formularioInicial);
@@ -57,10 +61,23 @@ function IncidenciaModal({
         }
 
         const tipoInicial = tiposFalla.some(
-            (tipo) => tipo.clave === formularioInicial.tipo
+            (tipo) =>
+                tipo.clave === formularioInicial.tipo &&
+                Number(tipo.unidad_negocio_id) ===
+                    Number(usuario?.unidad_negocio_id)
         )
             ? formularioInicial.tipo
-            : tiposFalla[0]?.clave || formularioInicial.tipo;
+            : tiposFalla.find(
+                (tipo) =>
+                    Number(tipo.unidad_negocio_id) ===
+                    Number(usuario?.unidad_negocio_id)
+            )?.clave || formularioInicial.tipo;
+
+        const turnosUnidadUsuario = turnos.filter(
+            (turno) =>
+                Number(turno.unidad_negocio_id) ===
+                Number(usuario?.unidad_negocio_id)
+        );
 
         setFormulario({
             ...formularioInicial,
@@ -68,14 +85,51 @@ function IncidenciaModal({
             prioridad:
                 cargarConfiguracion().prioridadDefault ||
                 formularioInicial.prioridad,
+            unidad_negocio_id:
+                usuario?.unidad_negocio_id || '',
             area_origen_id: usuario?.area_id || '',
             turno_id:
-                turnos.length === 1
-                    ? turnos[0].id
+                turnosUnidadUsuario.length === 1
+                    ? turnosUnidadUsuario[0].id
                     : ''
         });
         setError('');
-    }, [abierto, usuario?.area_id, turnos, tiposFalla]);
+    }, [
+        abierto,
+        usuario?.area_id,
+        usuario?.unidad_negocio_id,
+        turnos,
+        tiposFalla
+    ]);
+
+    const catalogosFiltrados = useMemo(
+        () => {
+            const unidadSeleccionada =
+                formulario.unidad_negocio_id ||
+                usuario?.unidad_negocio_id;
+
+            function porUnidad(item) {
+                return !unidadSeleccionada ||
+                    Number(item.unidad_negocio_id) ===
+                        Number(unidadSeleccionada);
+            }
+
+            return {
+                areas: areas.filter(porUnidad),
+                lineas: lineas.filter(porUnidad),
+                turnos: turnos.filter(porUnidad),
+                tiposFalla: tiposFalla.filter(porUnidad)
+            };
+        },
+        [
+            areas,
+            formulario.unidad_negocio_id,
+            lineas,
+            tiposFalla,
+            turnos,
+            usuario?.unidad_negocio_id
+        ]
+    );
 
     function manejarCambio(evento) {
         const {
@@ -85,13 +139,30 @@ function IncidenciaModal({
             checked
         } = evento.target;
 
-        setFormulario((actual) => ({
-            ...actual,
-            [name]:
-                type === 'checkbox'
-                    ? checked
-                    : value
-        }));
+        setFormulario((actual) => {
+            const siguiente = {
+                ...actual,
+                [name]:
+                    type === 'checkbox'
+                        ? checked
+                        : value
+            };
+
+            if (name === 'unidad_negocio_id') {
+                siguiente.area_origen_id = '';
+                siguiente.area_responsable_id = '';
+                siguiente.linea_id = '';
+                siguiente.turno_id = '';
+                siguiente.tipo =
+                    tiposFalla.find(
+                        (tipo) =>
+                            Number(tipo.unidad_negocio_id) ===
+                            Number(value)
+                    )?.clave || formularioInicial.tipo;
+            }
+
+            return siguiente;
+        });
 
         if (error) {
             setError('');
@@ -108,6 +179,11 @@ function IncidenciaModal({
 
         if (!formulario.descripcion.trim()) {
             setError('La descripción es obligatoria.');
+            return;
+        }
+
+        if (esSuperAdmin && !formulario.unidad_negocio_id) {
+            setError('Selecciona la unidad de negocio.');
             return;
         }
 
@@ -139,6 +215,12 @@ function IncidenciaModal({
                 ? Number(formulario.turno_id)
                 : null
         };
+
+        if (esSuperAdmin && formulario.unidad_negocio_id) {
+            datos.unidad_negocio_id = Number(
+                formulario.unidad_negocio_id
+            );
+        }
 
         try {
             setGuardando(true);
@@ -223,6 +305,39 @@ function IncidenciaModal({
                     </div>
 
                     <div className="grid gap-5 md:grid-cols-2">
+                        {esSuperAdmin && (
+                            <div className="md:col-span-2">
+                                <label
+                                    htmlFor="unidad_negocio_id"
+                                    className="mb-2 block text-sm font-semibold text-slate-700"
+                                >
+                                    Unidad de negocio
+                                </label>
+
+                                <select
+                                    id="unidad_negocio_id"
+                                    name="unidad_negocio_id"
+                                    value={formulario.unidad_negocio_id}
+                                    onChange={manejarCambio}
+                                    disabled={guardando}
+                                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                                >
+                                    <option value="">
+                                        Selecciona unidad
+                                    </option>
+
+                                    {unidadesNegocio.map((unidad) => (
+                                        <option
+                                            key={unidad.id}
+                                            value={unidad.id}
+                                        >
+                                            {unidad.nombre}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
                         <div>
                             <label
                                 htmlFor="tipo"
@@ -239,12 +354,14 @@ function IncidenciaModal({
                                 disabled={guardando}
                                 className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
                             >
-                                {tiposFalla.map((tipo) => (
+                                {catalogosFiltrados.tiposFalla.map((tipo) => (
                                     <option
-                                        key={tipo.clave}
+                                        key={`${tipo.unidad_negocio_id}-${tipo.clave}`}
                                         value={tipo.clave}
                                     >
-                                        {tipo.nombre}
+                                        {esSuperAdmin
+                                            ? `${tipo.nombre} - ${tipo.unidad_negocio_nombre}`
+                                            : tipo.nombre}
                                     </option>
                                 ))}
                             </select>
@@ -301,12 +418,14 @@ function IncidenciaModal({
                                     Selecciona un área
                                 </option>
 
-                                {areas.map((area) => (
+                                {catalogosFiltrados.areas.map((area) => (
                                     <option
                                         key={area.id}
                                         value={area.id}
                                     >
-                                        {area.nombre}
+                                        {esSuperAdmin
+                                            ? `${area.nombre} - ${area.unidad_negocio_nombre}`
+                                            : area.nombre}
                                     </option>
                                 ))}
                             </select>
@@ -332,12 +451,14 @@ function IncidenciaModal({
                                     Selecciona un área
                                 </option>
 
-                                {areas.map((area) => (
+                                {catalogosFiltrados.areas.map((area) => (
                                     <option
                                         key={area.id}
                                         value={area.id}
                                     >
-                                        {area.nombre}
+                                        {esSuperAdmin
+                                            ? `${area.nombre} - ${area.unidad_negocio_nombre}`
+                                            : area.nombre}
                                     </option>
                                 ))}
                             </select>
@@ -363,12 +484,14 @@ function IncidenciaModal({
                                     Sin línea
                                 </option>
 
-                                {lineas.map((linea) => (
+                                {catalogosFiltrados.lineas.map((linea) => (
                                     <option
                                         key={linea.id}
                                         value={linea.id}
                                     >
-                                        {linea.nombre}
+                                        {esSuperAdmin
+                                            ? `${linea.nombre} - ${linea.unidad_negocio_nombre}`
+                                            : linea.nombre}
                                     </option>
                                 ))}
                             </select>
@@ -394,12 +517,14 @@ function IncidenciaModal({
                                     Sin turno
                                 </option>
 
-                                {turnos.map((turno) => (
+                                {catalogosFiltrados.turnos.map((turno) => (
                                     <option
                                         key={turno.id}
                                         value={turno.id}
                                     >
-                                        {turno.nombre}
+                                        {esSuperAdmin
+                                            ? `${turno.nombre} - ${turno.unidad_negocio_nombre}`
+                                            : turno.nombre}
                                     </option>
                                 ))}
                             </select>

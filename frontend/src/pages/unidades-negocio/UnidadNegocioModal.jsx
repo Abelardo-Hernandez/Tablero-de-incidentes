@@ -1,6 +1,6 @@
 import {
     AlertCircle,
-    Layers3,
+    Building2,
     Save
 } from 'lucide-react';
 
@@ -10,35 +10,28 @@ import {
 } from 'react';
 
 import Modal from '../../components/ui/Modal';
-import useAuth from '../../hooks/useAuth';
 
 import {
-    actualizarArea,
-    crearArea,
-    obtenerUnidadesNegocio
+    actualizarUnidadNegocio,
+    crearUnidadNegocio
 } from '../../services/catalogos.service';
 
 const formularioInicial = {
     nombre: '',
     descripcion: '',
-    unidad_negocio_id: '',
     activo: true
 };
 
-function AreaModal({
+function UnidadNegocioModal({
     abierto,
-    areaEditar,
+    unidadEditar,
     onCerrar,
     onGuardado
 }) {
-    const { usuario } = useAuth();
-    const esSuperAdmin = usuario?.rol === 'super_admin';
-    const editando = Boolean(areaEditar?.id);
+    const editando = Boolean(unidadEditar?.id);
 
     const [formulario, setFormulario] =
         useState(formularioInicial);
-    const [unidadesNegocio, setUnidadesNegocio] = useState([]);
-
     const [guardando, setGuardando] = useState(false);
     const [error, setError] = useState('');
 
@@ -47,47 +40,18 @@ function AreaModal({
             return;
         }
 
-        if (areaEditar) {
+        if (unidadEditar) {
             setFormulario({
-                nombre: areaEditar.nombre || '',
-                descripcion: areaEditar.descripcion || '',
-                unidad_negocio_id:
-                    areaEditar.unidad_negocio_id || '',
-                activo: Boolean(areaEditar.activo)
+                nombre: unidadEditar.nombre || '',
+                descripcion: unidadEditar.descripcion || '',
+                activo: Boolean(unidadEditar.activo)
             });
         } else {
-            setFormulario({
-                ...formularioInicial,
-                unidad_negocio_id:
-                    usuario?.unidad_negocio_id || ''
-            });
+            setFormulario(formularioInicial);
         }
 
         setError('');
-    }, [abierto, areaEditar, usuario?.unidad_negocio_id]);
-
-    useEffect(() => {
-        async function cargarUnidades() {
-            if (!abierto || !esSuperAdmin) {
-                return;
-            }
-
-            try {
-                const respuesta = await obtenerUnidadesNegocio({
-                    activo: true
-                });
-
-                setUnidadesNegocio(respuesta.data || []);
-            } catch (errorSolicitud) {
-                console.error(
-                    'Error al cargar unidades:',
-                    errorSolicitud
-                );
-            }
-        }
-
-        cargarUnidades();
-    }, [abierto, esSuperAdmin]);
+    }, [abierto, unidadEditar]);
 
     function manejarCambio(evento) {
         const {
@@ -114,16 +78,7 @@ function AreaModal({
         evento.preventDefault();
 
         if (!formulario.nombre.trim()) {
-            setError('El nombre del área es obligatorio.');
-            return;
-        }
-
-        if (
-            esSuperAdmin &&
-            !editando &&
-            !formulario.unidad_negocio_id
-        ) {
-            setError('Selecciona la unidad de negocio.');
+            setError('El nombre de la unidad es obligatorio.');
             return;
         }
 
@@ -134,33 +89,30 @@ function AreaModal({
             activo: formulario.activo
         };
 
-        if (esSuperAdmin && formulario.unidad_negocio_id) {
-            datos.unidad_negocio_id = Number(
-                formulario.unidad_negocio_id
-            );
-        }
-
         try {
             setGuardando(true);
             setError('');
 
             if (editando) {
-                await actualizarArea(areaEditar.id, datos);
+                await actualizarUnidadNegocio(
+                    unidadEditar.id,
+                    datos
+                );
             } else {
-                await crearArea(datos);
+                await crearUnidadNegocio(datos);
             }
 
             await onGuardado();
             onCerrar();
         } catch (errorSolicitud) {
             console.error(
-                'Error al guardar área:',
+                'Error al guardar unidad:',
                 errorSolicitud
             );
 
             setError(
                 errorSolicitud.response?.data?.message ||
-                'No fue posible guardar el área.'
+                'No fue posible guardar la unidad de negocio.'
             );
         } finally {
             setGuardando(false);
@@ -173,13 +125,13 @@ function AreaModal({
             onCerrar={onCerrar}
             titulo={
                 editando
-                    ? 'Editar área'
-                    : 'Registrar área'
+                    ? 'Editar unidad'
+                    : 'Registrar unidad'
             }
             descripcion={
                 editando
-                    ? 'Actualiza el nombre, descripción y estado operativo.'
-                    : 'Agrega una nueva área para clasificar usuarios e incidencias.'
+                    ? 'Actualiza el nombre, descripcion y estado.'
+                    : 'Agrega una unidad para separar usuarios y catalogos.'
             }
         >
             <form onSubmit={manejarEnvio}>
@@ -190,7 +142,6 @@ function AreaModal({
                                 size={18}
                                 className="mt-0.5 shrink-0"
                             />
-
                             <span>{error}</span>
                         </div>
                     )}
@@ -200,7 +151,7 @@ function AreaModal({
                             htmlFor="nombre"
                             className="mb-2 block text-sm font-semibold text-slate-700"
                         >
-                            Nombre del área
+                            Nombre de la unidad
                         </label>
 
                         <input
@@ -208,7 +159,7 @@ function AreaModal({
                             name="nombre"
                             value={formulario.nombre}
                             onChange={manejarCambio}
-                            placeholder="Ej. Mantenimiento"
+                            placeholder="Ej. Planta Norte"
                             disabled={guardando}
                             className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
                         />
@@ -219,7 +170,7 @@ function AreaModal({
                             htmlFor="descripcion"
                             className="mb-2 block text-sm font-semibold text-slate-700"
                         >
-                            Descripción
+                            Descripcion
                         </label>
 
                         <textarea
@@ -227,59 +178,26 @@ function AreaModal({
                             name="descripcion"
                             value={formulario.descripcion}
                             onChange={manejarCambio}
-                            placeholder="Describe brevemente el alcance del área."
+                            placeholder="Describe brevemente esta unidad."
                             disabled={guardando}
                             rows={4}
                             className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
                         />
                     </div>
 
-                    {esSuperAdmin && (
-                        <div>
-                            <label
-                                htmlFor="unidad_negocio_id"
-                                className="mb-2 block text-sm font-semibold text-slate-700"
-                            >
-                                Unidad de negocio
-                            </label>
-
-                            <select
-                                id="unidad_negocio_id"
-                                name="unidad_negocio_id"
-                                value={formulario.unidad_negocio_id}
-                                onChange={manejarCambio}
-                                disabled={guardando || editando}
-                                className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10 disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                                <option value="">
-                                    Selecciona unidad
-                                </option>
-
-                                {unidadesNegocio.map((unidad) => (
-                                    <option
-                                        key={unidad.id}
-                                        value={unidad.id}
-                                    >
-                                        {unidad.nombre}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
                     <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex items-center gap-3">
                             <div className="grid h-11 w-11 place-items-center rounded-xl bg-white text-emerald-700">
-                                <Layers3 size={20} />
+                                <Building2 size={20} />
                             </div>
 
                             <div>
                                 <p className="text-sm font-bold text-slate-800">
-                                    Área activa
+                                    Unidad activa
                                 </p>
 
                                 <p className="mt-1 text-xs text-slate-500">
-                                    Disponible para asignaciones y filtros.
+                                    Disponible para usuarios y catalogos.
                                 </p>
                             </div>
                         </div>
@@ -318,7 +236,7 @@ function AreaModal({
                         ) : (
                             <>
                                 <Save size={18} />
-                                Guardar área
+                                Guardar unidad
                             </>
                         )}
                     </button>
@@ -328,4 +246,4 @@ function AreaModal({
     );
 }
 
-export default AreaModal;
+export default UnidadNegocioModal;

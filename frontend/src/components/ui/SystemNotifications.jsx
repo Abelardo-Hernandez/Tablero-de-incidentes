@@ -17,6 +17,8 @@ import {
     obtenerIncidencias
 } from '../../services/incidencias.service';
 
+import useAuth from '../../hooks/useAuth';
+
 import {
     cargarConfiguracion,
     EVENTO_CONFIGURACION
@@ -75,11 +77,42 @@ function reproducirAlerta() {
     }
 }
 
+function mostrarAvisoNavegador(aviso) {
+    if (
+        typeof window === 'undefined' ||
+        !('Notification' in window) ||
+        window.Notification.permission !== 'granted' ||
+        aviso.tipo === 'resumen'
+    ) {
+        return;
+    }
+
+    try {
+        const notificacion = new window.Notification(aviso.titulo, {
+            body: aviso.mensaje,
+            tag: `incidencia-${aviso.tipo}`,
+            renotify: true
+        });
+
+        window.setTimeout(() => {
+            notificacion.close();
+        }, 9000);
+    } catch {
+        // El navegador puede bloquear avisos fuera de contextos seguros.
+    }
+}
+
 function fechaLocal() {
     return new Date().toISOString().slice(0, 10);
 }
 
 function SystemNotifications() {
+    const { usuario } = useAuth();
+    const unidadNegocioId = usuario?.unidad_negocio_id;
+    const esAdministrador = [
+        'administrador',
+        'super_admin'
+    ].includes(usuario?.rol);
     const [configuracion, setConfiguracion] = useState(
         cargarConfiguracion
     );
@@ -116,8 +149,19 @@ function SystemNotifications() {
         };
     }, []);
 
+    useEffect(() => {
+        idsVistosRef.current = new Set();
+        primeraCargaRef.current = true;
+        setAvisos([]);
+    }, [unidadNegocioId]);
+
     const agregarAviso = useCallback((aviso) => {
-        const notificacion = agregarNotificacion(aviso);
+        const notificacion = agregarNotificacion(
+            aviso,
+            unidadNegocioId
+        );
+
+        mostrarAvisoNavegador(aviso);
 
         setAvisos((actual) => [
             notificacion,
@@ -131,7 +175,7 @@ function SystemNotifications() {
                 )
             );
         }, 8500);
-    }, []);
+    }, [unidadNegocioId]);
 
     const crearResumenDiario = useCallback(
         (incidencias) => {
@@ -140,7 +184,8 @@ function SystemNotifications() {
             }
 
             const hoy = fechaLocal();
-            const claveHoy = `${CLAVE_RESUMEN_DIARIO}:${hoy}`;
+            const claveHoy =
+                `${CLAVE_RESUMEN_DIARIO}:unidad_${unidadNegocioId || 'sin_unidad'}:${hoy}`;
 
             if (localStorage.getItem(claveHoy)) {
                 return;
@@ -179,11 +224,16 @@ function SystemNotifications() {
                 mensaje: `${abiertas.length} abiertas, ${criticas.length} críticas y ${resueltasHoy.length} resueltas hoy.`
             });
         },
-        [agregarAviso, configuracion.resumenDiario]
+        [
+            agregarAviso,
+            configuracion.resumenDiario,
+            unidadNegocioId
+        ]
     );
 
     const revisarIncidencias = useCallback(async () => {
         if (
+            !unidadNegocioId ||
             !configuracion.notificacionesPantalla &&
             !configuracion.sonidoAlertas &&
             !configuracion.resumenDiario
@@ -194,7 +244,14 @@ function SystemNotifications() {
         try {
             const respuesta = await obtenerIncidencias();
             const incidencias = respuesta.data || [];
-            const abiertas = incidencias.filter(
+            const incidenciasParaAviso = esAdministrador
+                ? incidencias
+                : incidencias.filter(
+                    (incidencia) =>
+                        Number(incidencia.area_responsable_id) ===
+                        Number(usuario?.area_id)
+                );
+            const abiertas = incidenciasParaAviso.filter(
                 (incidencia) =>
                     estadosAbiertos.includes(
                         incidencia.estado
@@ -257,7 +314,10 @@ function SystemNotifications() {
     }, [
         agregarAviso,
         configuracion,
-        crearResumenDiario
+        crearResumenDiario,
+        esAdministrador,
+        unidadNegocioId,
+        usuario?.area_id
     ]);
 
     useEffect(() => {

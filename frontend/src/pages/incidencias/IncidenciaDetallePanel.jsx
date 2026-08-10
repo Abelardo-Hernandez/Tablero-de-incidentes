@@ -112,7 +112,9 @@ function IncidenciaDetallePanel({
     }, [incidencia?.id, abierto]);
 
     const usuariosResponsables = useMemo(() => {
-        if (usuario?.rol === 'administrador') {
+        if (
+            ['administrador', 'super_admin'].includes(usuario?.rol)
+        ) {
             return usuarios;
         }
 
@@ -133,7 +135,7 @@ function IncidenciaDetallePanel({
 
     const incidenciaActual = detalle || incidencia;
     const puedeAsignarResponsable =
-        usuario?.rol === 'administrador' ||
+        ['administrador', 'super_admin'].includes(usuario?.rol) ||
         Number(usuario?.area_id) ===
             Number(incidenciaActual.area_responsable_id);
     const puedeIniciar = incidenciaActual.estado === 'asignada';

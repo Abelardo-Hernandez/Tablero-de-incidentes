@@ -189,6 +189,14 @@ function formatearHora(fecha) {
     }).format(valor);
 }
 
+function obtenerFechaLocalISO(fecha = new Date()) {
+    const anio = fecha.getFullYear();
+    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dia = String(fecha.getDate()).padStart(2, '0');
+
+    return `${anio}-${mes}-${dia}`;
+}
+
 function agruparPor(lista, obtenerClave) {
     const mapa = new Map();
 
@@ -236,7 +244,7 @@ function ReportesPage() {
     } = useAuth();
 
     const esAdministrador =
-        usuario?.rol === 'administrador';
+        ['administrador', 'super_admin'].includes(usuario?.rol);
 
     const [incidencias, setIncidencias] = useState([]);
     const [areas, setAreas] = useState([]);
@@ -981,6 +989,327 @@ function ReportesPage() {
         ventana.print();
     }
 
+    function exportarResumenDia() {
+        const hoy = obtenerFechaLocalISO();
+        const esLiderArea =
+            Boolean(usuario?.es_lider) && !esAdministrador;
+
+        const incidenciasDia = incidencias.filter((incidencia) => {
+            if (!String(incidencia.fecha_creacion || '').startsWith(hoy)) {
+                return false;
+            }
+
+            if (!esLiderArea) {
+                return true;
+            }
+
+            return Number(incidencia.area_responsable_id) ===
+                Number(usuario?.area_id);
+        });
+
+        const tiemposAtencion = incidenciasDia
+            .map((incidencia) =>
+                minutosEntre(
+                    incidencia.fecha_inicio_atencion ||
+                        incidencia.fecha_asignacion,
+                    incidencia.fecha_resolucion ||
+                        incidencia.fecha_cierre
+                )
+            )
+            .filter((valor) => valor !== null);
+
+        const promedioAtencion = tiemposAtencion.length
+            ? Math.round(
+                tiemposAtencion.reduce(
+                    (total, valor) => total + valor,
+                    0
+                ) / tiemposAtencion.length
+            )
+            : null;
+
+        const resumen = {
+            total: incidenciasDia.length,
+            abiertas: incidenciasDia.filter((incidencia) =>
+                estadosAbiertos.includes(incidencia.estado)
+            ).length,
+            resueltas: incidenciasDia.filter((incidencia) =>
+                estadosResueltos.includes(incidencia.estado)
+            ).length,
+            cerradas: incidenciasDia.filter(
+                (incidencia) => incidencia.estado === 'cerrada'
+            ).length,
+            canceladas: incidenciasDia.filter(
+                (incidencia) => incidencia.estado === 'cancelada'
+            ).length,
+            criticas: incidenciasDia.filter(
+                (incidencia) => incidencia.prioridad === 'critica'
+            ).length,
+            sinResponsable: incidenciasDia.filter(
+                (incidencia) => !incidencia.responsable_nombre
+            ).length,
+            promedioAtencion
+        };
+
+        const tablasResumen = [
+            [
+                'Por area que atiende',
+                agruparPor(
+                    incidenciasDia,
+                    (incidencia) => incidencia.area_nombre
+                )
+            ],
+            [
+                'Por linea',
+                agruparPor(
+                    incidenciasDia,
+                    (incidencia) => incidencia.linea_nombre
+                )
+            ],
+            [
+                'Por prioridad',
+                agruparPor(
+                    incidenciasDia,
+                    (incidencia) =>
+                        prioridades[incidencia.prioridad]
+                )
+            ],
+            [
+                'Por estado',
+                agruparPor(
+                    incidenciasDia,
+                    (incidencia) => estados[incidencia.estado]
+                )
+            ],
+            [
+                'Responsables',
+                agruparPor(
+                    incidenciasDia.filter(
+                        (incidencia) =>
+                            incidencia.responsable_nombre
+                    ),
+                    (incidencia) =>
+                        incidencia.responsable_nombre
+                )
+            ],
+            [
+                'Tipos de falla',
+                agruparPor(
+                    incidenciasDia,
+                    (incidencia) =>
+                        tipos[incidencia.tipo] ||
+                        incidencia.tipo_nombre ||
+                        incidencia.tipo
+                )
+            ]
+        ];
+
+        const ventana = window.open('', '_blank');
+
+        if (!ventana) {
+            window.alert(
+                'No fue posible abrir la ventana de impresion. Revisa el bloqueo de ventanas emergentes.'
+            );
+            return;
+        }
+
+        const alcance = esLiderArea
+            ? `Area: ${usuario?.area_nombre || 'Sin area'}`
+            : `Unidad: ${usuario?.unidad_negocio_nombre || 'Actual'}`;
+
+        const kpisHtml = [
+            ['Reportes creados', resumen.total],
+            ['Abiertos', resumen.abiertas],
+            ['Resueltos/cerrados', resumen.resueltas],
+            ['Cerrados', resumen.cerradas],
+            ['Cancelados', resumen.canceladas],
+            ['Criticos', resumen.criticas],
+            ['Sin responsable', resumen.sinResponsable],
+            [
+                'Promedio atencion',
+                formatearMinutos(resumen.promedioAtencion)
+            ]
+        ]
+            .map(
+                ([etiqueta, valor]) => `
+                    <article class="kpi">
+                        <span>${escaparHtml(etiqueta)}</span>
+                        <strong>${escaparHtml(valor)}</strong>
+                    </article>
+                `
+            )
+            .join('');
+
+        const rankingsHtml = tablasResumen
+            .map(([titulo, datos]) => `
+                <section class="ranking">
+                    <h2>${escaparHtml(titulo)}</h2>
+                    ${
+                        datos.length
+                            ? datos
+                                .map(
+                                    (item) => `
+                                        <div class="ranking-row">
+                                            <span>${escaparHtml(item.nombre)}</span>
+                                            <strong>${item.cantidad}</strong>
+                                        </div>
+                                    `
+                                )
+                                .join('')
+                            : '<p class="empty">Sin datos.</p>'
+                    }
+                </section>
+            `)
+            .join('');
+
+        const filasHtml = incidenciasDia.length
+            ? incidenciasDia
+                .map((incidencia) => `
+                    <tr>
+                        <td>${escaparHtml(incidencia.folio)}</td>
+                        <td>${escaparHtml(formatearHora(incidencia.fecha_creacion))}</td>
+                        <td>${escaparHtml(incidencia.titulo)}</td>
+                        <td>${escaparHtml(incidencia.linea_nombre || 'Sin linea')}</td>
+                        <td>${escaparHtml(incidencia.area_nombre || 'Sin area')}</td>
+                        <td>${escaparHtml(incidencia.responsable_nombre || 'Sin responsable')}</td>
+                        <td>${escaparHtml(prioridades[incidencia.prioridad] || incidencia.prioridad)}</td>
+                        <td>${escaparHtml(estados[incidencia.estado] || incidencia.estado)}</td>
+                        <td>${escaparHtml(formatearMinutos(calcularTiempoTotal(incidencia)))}</td>
+                    </tr>
+                `)
+                .join('')
+            : '<tr><td colspan="9">Sin reportes creados hoy.</td></tr>';
+
+        ventana.document.write(`
+            <!doctype html>
+            <html lang="es">
+                <head>
+                    <meta charset="utf-8" />
+                    <title>Resumen diario de incidencias</title>
+                    <style>
+                        body {
+                            color: #0f172a;
+                            font-family: Arial, sans-serif;
+                            margin: 24px;
+                        }
+
+                        h1 {
+                            font-size: 24px;
+                            margin: 0 0 6px;
+                        }
+
+                        h2 {
+                            font-size: 14px;
+                            margin: 0 0 10px;
+                        }
+
+                        .meta {
+                            color: #475569;
+                            font-size: 12px;
+                            margin-bottom: 18px;
+                        }
+
+                        .kpis,
+                        .rankings {
+                            display: grid;
+                            gap: 10px;
+                            grid-template-columns: repeat(4, 1fr);
+                            margin-bottom: 18px;
+                        }
+
+                        .kpi,
+                        .ranking {
+                            border: 1px solid #e2e8f0;
+                            border-radius: 10px;
+                            padding: 10px;
+                        }
+
+                        .kpi span,
+                        .empty {
+                            color: #64748b;
+                            display: block;
+                            font-size: 11px;
+                        }
+
+                        .kpi strong {
+                            display: block;
+                            font-size: 20px;
+                            margin-top: 5px;
+                        }
+
+                        .ranking-row {
+                            align-items: center;
+                            border-top: 1px solid #f1f5f9;
+                            display: flex;
+                            font-size: 11px;
+                            justify-content: space-between;
+                            padding: 6px 0;
+                        }
+
+                        table {
+                            border-collapse: collapse;
+                            font-size: 10.5px;
+                            width: 100%;
+                        }
+
+                        th,
+                        td {
+                            border: 1px solid #e2e8f0;
+                            padding: 6px;
+                            text-align: left;
+                            vertical-align: top;
+                        }
+
+                        th {
+                            background: #f8fafc;
+                            font-weight: 700;
+                        }
+
+                        @page {
+                            margin: 14mm;
+                            size: landscape;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1>Resumen diario de incidencias</h1>
+                    <div class="meta">
+                        Fecha: ${escaparHtml(formatearFecha(`${hoy}T00:00:00`))}
+                        &middot; Generado: ${escaparHtml(new Date().toLocaleString('es-MX'))}
+                        &middot; ${escaparHtml(alcance)}
+                    </div>
+
+                    <section class="kpis">
+                        ${kpisHtml}
+                    </section>
+
+                    <section class="rankings">
+                        ${rankingsHtml}
+                    </section>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Folio</th>
+                                <th>Hora</th>
+                                <th>Titulo</th>
+                                <th>Linea</th>
+                                <th>Area que atiende</th>
+                                <th>Responsable</th>
+                                <th>Prioridad</th>
+                                <th>Estado</th>
+                                <th>Tiempo total</th>
+                            </tr>
+                        </thead>
+                        <tbody>${filasHtml}</tbody>
+                    </table>
+                </body>
+            </html>
+        `);
+        ventana.document.close();
+        ventana.focus();
+        ventana.print();
+    }
+
     if (busquedaAvanzada) {
         return (
             <div className="mx-auto max-w-[1800px] space-y-6">
@@ -1009,6 +1338,15 @@ function ReportesPage() {
                         </div>
 
                         <div className="flex flex-col gap-3 sm:flex-row">
+                            <button
+                                type="button"
+                                onClick={exportarResumenDia}
+                                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 px-4 font-bold text-blue-700 transition hover:bg-blue-50"
+                            >
+                                <FileDown size={18} />
+                                Resumen de hoy
+                            </button>
+
                             <button
                                 type="button"
                                 onClick={limpiarFiltros}
@@ -1195,8 +1533,18 @@ function ReportesPage() {
                 />
             </section>
 
-            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <section className="grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)] lg:items-stretch">
+                <button
+                    type="button"
+                    onClick={exportarResumenDia}
+                    className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-xl border border-blue-200 bg-white px-4 text-sm font-bold text-blue-700 shadow-sm transition hover:bg-blue-50 lg:w-auto lg:self-center"
+                >
+                    <FileDown size={18} />
+                    Resumen de hoy
+                </button>
+
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <div className="flex items-center gap-2 text-sm font-bold text-emerald-700">
                             <Filter size={18} />
@@ -1219,6 +1567,7 @@ function ReportesPage() {
                             className="-rotate-90"
                         />
                     </button>
+                    </div>
                 </div>
             </section>
         </div>

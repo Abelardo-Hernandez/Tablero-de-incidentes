@@ -11,6 +11,7 @@ import {
 } from 'react';
 
 import Modal from '../../components/ui/Modal';
+import useAuth from '../../hooks/useAuth';
 
 import {
     actualizarUsuario,
@@ -23,6 +24,7 @@ const formularioInicial = {
     correo: '',
     password: '',
     rol: 'usuario',
+    unidad_negocio_id: '',
     area_id: '',
     linea_id: '',
     es_lider: false,
@@ -34,9 +36,12 @@ function UsuarioModal({
     usuarioEditar,
     areas,
     lineas,
+    unidadesNegocio = [],
     onCerrar,
     onGuardado
 }) {
+    const { usuario } = useAuth();
+    const esSuperAdmin = usuario?.rol === 'super_admin';
     const editando = Boolean(usuarioEditar?.id);
 
     const [formulario, setFormulario] =
@@ -57,26 +62,62 @@ function UsuarioModal({
                 correo: usuarioEditar.correo || '',
                 password: '',
                 rol: usuarioEditar.rol || 'usuario',
+                unidad_negocio_id:
+                    usuarioEditar.unidad_negocio_id || '',
                 area_id: usuarioEditar.area_id || '',
                 linea_id: usuarioEditar.linea_id || '',
                 es_lider: Boolean(usuarioEditar.es_lider),
                 activo: Boolean(usuarioEditar.activo)
             });
         } else {
-            setFormulario(formularioInicial);
+            setFormulario({
+                ...formularioInicial,
+                unidad_negocio_id:
+                    usuario?.unidad_negocio_id || ''
+            });
         }
 
         setError('');
-    }, [abierto, usuarioEditar]);
+    }, [abierto, usuarioEditar, usuario?.unidad_negocio_id]);
+
+    const areasFiltradas = useMemo(
+        () => {
+            if (!esSuperAdmin || !formulario.unidad_negocio_id) {
+                return areas;
+            }
+
+            return areas.filter(
+                (area) =>
+                    Number(area.unidad_negocio_id) ===
+                    Number(formulario.unidad_negocio_id)
+            );
+        },
+        [areas, esSuperAdmin, formulario.unidad_negocio_id]
+    );
+
+    const lineasFiltradas = useMemo(
+        () => {
+            if (!esSuperAdmin || !formulario.unidad_negocio_id) {
+                return lineas;
+            }
+
+            return lineas.filter(
+                (linea) =>
+                    Number(linea.unidad_negocio_id) ===
+                    Number(formulario.unidad_negocio_id)
+            );
+        },
+        [lineas, esSuperAdmin, formulario.unidad_negocio_id]
+    );
 
     const areaSeleccionada = useMemo(
         () =>
-            areas.find(
+            areasFiltradas.find(
                 (area) =>
                     Number(area.id) ===
                     Number(formulario.area_id)
             ),
-        [areas, formulario.area_id]
+        [areasFiltradas, formulario.area_id]
     );
 
     const esProduccion = useMemo(() => {
@@ -98,13 +139,26 @@ function UsuarioModal({
             checked
         } = evento.target;
 
-        setFormulario((actual) => ({
-            ...actual,
-            [name]:
-                type === 'checkbox'
-                    ? checked
-                    : value
-        }));
+        setFormulario((actual) => {
+            const siguiente = {
+                ...actual,
+                [name]:
+                    type === 'checkbox'
+                        ? checked
+                        : value
+            };
+
+            if (name === 'unidad_negocio_id') {
+                siguiente.area_id = '';
+                siguiente.linea_id = '';
+            }
+
+            if (name === 'area_id') {
+                siguiente.linea_id = '';
+            }
+
+            return siguiente;
+        });
 
         if (error) {
             setError('');
@@ -179,6 +233,12 @@ function UsuarioModal({
             es_lider: formulario.es_lider,
             activo: formulario.activo
         };
+
+        if (esSuperAdmin && formulario.unidad_negocio_id) {
+            datos.unidad_negocio_id = Number(
+                formulario.unidad_negocio_id
+            );
+        }
 
         if (!editando) {
             datos.password = formulario.password;
@@ -349,8 +409,47 @@ function UsuarioModal({
                                 <option value="administrador">
                                     Administrador
                                 </option>
+
+                                {esSuperAdmin && (
+                                    <option value="super_admin">
+                                        Super admin
+                                    </option>
+                                )}
                             </select>
                         </div>
+
+                        {esSuperAdmin && (
+                            <div>
+                                <label
+                                    htmlFor="unidad_negocio_id"
+                                    className="mb-2 block text-sm font-semibold text-slate-700"
+                                >
+                                    Unidad
+                                </label>
+
+                                <select
+                                    id="unidad_negocio_id"
+                                    name="unidad_negocio_id"
+                                    value={formulario.unidad_negocio_id}
+                                    onChange={manejarCambio}
+                                    disabled={guardando}
+                                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                                >
+                                    <option value="">
+                                        Selecciona unidad
+                                    </option>
+
+                                    {unidadesNegocio.map((unidad) => (
+                                        <option
+                                            key={unidad.id}
+                                            value={unidad.id}
+                                        >
+                                            {unidad.nombre}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
 
                         <div>
                             <label
@@ -372,7 +471,7 @@ function UsuarioModal({
                                     Sin área asignada
                                 </option>
 
-                                {areas.map((area) => (
+                                {areasFiltradas.map((area) => (
                                     <option
                                         key={area.id}
                                         value={area.id}
@@ -408,7 +507,7 @@ function UsuarioModal({
                                     No aplica
                                 </option>
 
-                                {lineas.map((linea) => (
+                                {lineasFiltradas.map((linea) => (
                                     <option
                                         key={linea.id}
                                         value={linea.id}

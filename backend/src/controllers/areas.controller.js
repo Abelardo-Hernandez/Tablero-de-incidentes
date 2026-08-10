@@ -7,15 +7,59 @@ function convertirArea(area) {
     };
 }
 
+function esSuperAdmin(usuario) {
+    return usuario?.rol === 'super_admin';
+}
+
+function filtroUnidad(req, alias = 'a') {
+    if (esSuperAdmin(req.user)) {
+        return {
+            sql: '',
+            valores: []
+        };
+    }
+
+    return {
+        sql: `${alias}.unidad_negocio_id = ?`,
+        valores: [req.user.unidad_negocio_id]
+    };
+}
+
+async function obtenerUnidadObjetivo(req, unidadNegocioId) {
+    const unidadObjetivoId =
+        esSuperAdmin(req.user) && unidadNegocioId
+            ? Number(unidadNegocioId)
+            : req.user.unidad_negocio_id;
+
+    const [unidades] = await db.query(
+        `
+        SELECT id, activo
+        FROM unidades_negocio
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [unidadObjetivoId]
+    );
+
+    if (unidades.length === 0 || !unidades[0].activo) {
+        return null;
+    }
+
+    return unidadObjetivoId;
+}
+
 async function obtenerAreas(req, res) {
     try {
         const { activo, buscar } = req.query;
 
-        const condiciones = [];
-        const valores = [];
+        const filtro = filtroUnidad(req);
+        const condiciones = filtro.sql
+            ? [filtro.sql]
+            : [];
+        const valores = [...filtro.valores];
 
         if (activo !== undefined && activo !== '') {
-            condiciones.push('activo = ?');
+            condiciones.push('a.activo = ?');
             valores.push(
                 activo === 'true' || activo === '1' ? 1 : 0
             );
@@ -24,13 +68,14 @@ async function obtenerAreas(req, res) {
         if (buscar) {
             condiciones.push(`
                 (
-                    nombre LIKE ?
-                    OR descripcion LIKE ?
+                    a.nombre LIKE ?
+                    OR a.descripcion LIKE ?
+                    OR un.nombre LIKE ?
                 )
             `);
 
             const termino = `%${buscar.trim()}%`;
-            valores.push(termino, termino);
+            valores.push(termino, termino, termino);
         }
 
         const where = condiciones.length
@@ -40,14 +85,18 @@ async function obtenerAreas(req, res) {
         const [areas] = await db.query(
             `
             SELECT
-                id,
-                nombre,
-                descripcion,
-                activo,
-                fecha_creacion
-            FROM areas
+                a.id,
+                a.unidad_negocio_id,
+                un.nombre AS unidad_negocio_nombre,
+                a.nombre,
+                a.descripcion,
+                a.activo,
+                a.fecha_creacion
+            FROM areas a
+            INNER JOIN unidades_negocio un
+                ON un.id = a.unidad_negocio_id
             ${where}
-            ORDER BY activo DESC, nombre ASC
+            ORDER BY a.activo DESC, un.nombre ASC, a.nombre ASC
             `,
             valores
         );
@@ -74,15 +123,26 @@ async function obtenerAreaPorId(req, res) {
             `
             SELECT
                 id,
+                unidad_negocio_id,
                 nombre,
                 descripcion,
                 activo,
                 fecha_creacion
             FROM areas
             WHERE id = ?
+            ${
+                esSuperAdmin(req.user)
+                    ? ''
+                    : 'AND unidad_negocio_id = ?'
+            }
             LIMIT 1
             `,
-            [id]
+            esSuperAdmin(req.user)
+                ? [id]
+                : [
+                    id,
+                    req.user.unidad_negocio_id
+                ]
         );
 
         if (areas.length === 0) {
@@ -111,6 +171,7 @@ async function crearArea(req, res) {
         const {
             nombre,
             descripcion = null,
+            unidad_negocio_id,
             activo = true
         } = req.body;
 
@@ -122,15 +183,30 @@ async function crearArea(req, res) {
         }
 
         const nombreLimpio = nombre.trim();
+        const unidadObjetivoId = await obtenerUnidadObjetivo(
+            req,
+            unidad_negocio_id
+        );
+
+        if (!unidadObjetivoId) {
+            return res.status(400).json({
+                success: false,
+                message: 'La unidad de negocio seleccionada no existe o esta desactivada'
+            });
+        }
 
         const [existentes] = await db.query(
             `
             SELECT id
             FROM areas
             WHERE LOWER(nombre) = LOWER(?)
+              AND unidad_negocio_id = ?
             LIMIT 1
             `,
-            [nombreLimpio]
+            [
+                nombreLimpio,
+                unidadObjetivoId
+            ]
         );
 
         if (existentes.length > 0) {
@@ -145,13 +221,15 @@ async function crearArea(req, res) {
             INSERT INTO areas (
                 nombre,
                 descripcion,
+                unidad_negocio_id,
                 activo
             )
-            VALUES (?, ?, ?)
+            VALUES (?, ?, ?, ?)
             `,
             [
                 nombreLimpio,
                 descripcion?.trim() || null,
+                unidadObjetivoId,
                 Boolean(activo)
             ]
         );
@@ -188,12 +266,23 @@ async function actualizarArea(req, res) {
                 id,
                 nombre,
                 descripcion,
+                unidad_negocio_id,
                 activo
             FROM areas
             WHERE id = ?
+            ${
+                esSuperAdmin(req.user)
+                    ? ''
+                    : 'AND unidad_negocio_id = ?'
+            }
             LIMIT 1
             `,
-            [id]
+            esSuperAdmin(req.user)
+                ? [id]
+                : [
+                    id,
+                    req.user.unidad_negocio_id
+                ]
         );
 
         if (areas.length === 0) {
@@ -232,10 +321,15 @@ async function actualizarArea(req, res) {
             SELECT id
             FROM areas
             WHERE LOWER(nombre) = LOWER(?)
+              AND unidad_negocio_id = ?
               AND id <> ?
             LIMIT 1
             `,
-            [nuevoNombre, id]
+            [
+                nuevoNombre,
+                actual.unidad_negocio_id,
+                id
+            ]
         );
 
         if (duplicados.length > 0) {
@@ -253,12 +347,22 @@ async function actualizarArea(req, res) {
                 descripcion = ?,
                 activo = ?
             WHERE id = ?
+            ${
+                esSuperAdmin(req.user)
+                    ? ''
+                    : 'AND unidad_negocio_id = ?'
+            }
             `,
             [
                 nuevoNombre,
                 nuevaDescripcion,
                 nuevoActivo,
-                id
+                id,
+                ...(
+                    esSuperAdmin(req.user)
+                        ? []
+                        : [req.user.unidad_negocio_id]
+                )
             ]
         );
 
@@ -293,8 +397,21 @@ async function cambiarEstadoArea(req, res) {
             UPDATE areas
             SET activo = ?
             WHERE id = ?
+            ${
+                esSuperAdmin(req.user)
+                    ? ''
+                    : 'AND unidad_negocio_id = ?'
+            }
             `,
-            [Boolean(activo), id]
+            [
+                Boolean(activo),
+                id,
+                ...(
+                    esSuperAdmin(req.user)
+                        ? []
+                        : [req.user.unidad_negocio_id]
+                )
+            ]
         );
 
         if (resultado.affectedRows === 0) {

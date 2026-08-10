@@ -4,10 +4,16 @@ export const CLAVE_NOTIFICACIONES =
 export const EVENTO_NOTIFICACIONES =
     'tablero-incidentes-notificaciones';
 
-export function obtenerNotificaciones() {
+function obtenerClaveNotificaciones(unidadNegocioId) {
+    return unidadNegocioId
+        ? `${CLAVE_NOTIFICACIONES}:unidad_${unidadNegocioId}`
+        : CLAVE_NOTIFICACIONES;
+}
+
+export function obtenerNotificaciones(unidadNegocioId) {
     try {
         const guardadas = localStorage.getItem(
-            CLAVE_NOTIFICACIONES
+            obtenerClaveNotificaciones(unidadNegocioId)
         );
 
         if (!guardadas) {
@@ -20,42 +26,52 @@ export function obtenerNotificaciones() {
     }
 }
 
-function emitirNotificaciones(notificaciones) {
+function emitirNotificaciones(
+    notificaciones,
+    unidadNegocioId
+) {
     localStorage.setItem(
-        CLAVE_NOTIFICACIONES,
+        obtenerClaveNotificaciones(unidadNegocioId),
         JSON.stringify(notificaciones)
     );
 
     window.dispatchEvent(
         new CustomEvent(EVENTO_NOTIFICACIONES, {
-            detail: notificaciones
+            detail: {
+                unidadNegocioId,
+                notificaciones
+            }
         })
     );
 }
 
-export function agregarNotificacion(notificacion) {
+export function agregarNotificacion(
+    notificacion,
+    unidadNegocioId
+) {
     const siguiente = [
         {
             id: `${Date.now()}-${Math.random()}`,
             fecha: new Date().toISOString(),
+            unidad_negocio_id: unidadNegocioId || null,
             ...notificacion
         },
-        ...obtenerNotificaciones()
+        ...obtenerNotificaciones(unidadNegocioId)
     ].slice(0, 30);
 
-    emitirNotificaciones(siguiente);
+    emitirNotificaciones(siguiente, unidadNegocioId);
 
     return siguiente[0];
 }
 
-export function eliminarNotificacion(id) {
-    const siguiente = obtenerNotificaciones().filter(
-        (notificacion) => notificacion.id !== id
-    );
+export function eliminarNotificacion(id, unidadNegocioId) {
+    const siguiente = obtenerNotificaciones(
+        unidadNegocioId
+    ).filter((notificacion) => notificacion.id !== id);
 
-    emitirNotificaciones(siguiente);
+    emitirNotificaciones(siguiente, unidadNegocioId);
 }
 
-export function limpiarNotificaciones() {
-    emitirNotificaciones([]);
+export function limpiarNotificaciones(unidadNegocioId) {
+    emitirNotificaciones([], unidadNegocioId);
 }

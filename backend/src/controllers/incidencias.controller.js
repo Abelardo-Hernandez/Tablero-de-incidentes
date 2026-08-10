@@ -9,6 +9,10 @@ const {
     tipoFallaActivoExiste
 } = require('../services/tipos-falla.service');
 
+const {
+    notificarNuevaIncidencia
+} = require('../services/push.service');
+
 const ESTADOS = [
     'nueva',
     'asignada',
@@ -59,6 +63,13 @@ const PRIORIDADES = [
     'alta',
     'critica'
 ];
+
+function esAdministrador(usuario) {
+    return [
+        'administrador',
+        'super_admin'
+    ].includes(usuario?.rol);
+}
 
 const ETIQUETAS_PRIORIDAD = {
     baja: 'Baja',
@@ -351,7 +362,9 @@ function validarTransicionEstado(estadoAnterior, estadoNuevo) {
 
 async function obtenerIncidencias(req, res) {
     try {
-        await asegurarCatalogoTiposFalla();
+        await asegurarCatalogoTiposFalla(
+            req.user.unidad_negocio_id
+        );
 
         const {
             estado,
@@ -363,8 +376,12 @@ async function obtenerIncidencias(req, res) {
             buscar
         } = req.query;
 
-        const condiciones = [];
-        const valores = [];
+        const condiciones = [
+            'i.unidad_negocio_id = ?'
+        ];
+        const valores = [
+            req.user.unidad_negocio_id
+        ];
 
         if (estado) {
             condiciones.push('i.estado = ?');
@@ -423,6 +440,7 @@ async function obtenerIncidencias(req, res) {
             `
             SELECT
                 i.id,
+                i.unidad_negocio_id,
                 i.titulo,
                 i.descripcion,
                 i.tipo,
@@ -467,6 +485,7 @@ async function obtenerIncidencias(req, res) {
                 ON t.id = i.turno_id
             LEFT JOIN tipos_falla tf
                 ON tf.clave = i.tipo
+               AND tf.unidad_negocio_id = i.unidad_negocio_id
             ${where}
             ORDER BY
                 FIELD(i.estado, 'nueva', 'asignada', 'en_proceso', 'resuelta', 'cerrada', 'cancelada'),
@@ -493,11 +512,14 @@ async function obtenerIncidencias(req, res) {
 async function obtenerResponsables(req, res) {
     try {
         const condiciones = [
-            'u.activo = 1'
+            'u.activo = 1',
+            'u.unidad_negocio_id = ?'
         ];
-        const valores = [];
+        const valores = [
+            req.user.unidad_negocio_id
+        ];
 
-        if (req.user.rol !== 'administrador') {
+        if (!esAdministrador(req.user)) {
             if (!req.user.area_id) {
                 return res.json({
                     success: true,
@@ -517,6 +539,7 @@ async function obtenerResponsables(req, res) {
                 u.usuario,
                 u.correo,
                 u.rol,
+                u.unidad_negocio_id,
                 u.area_id,
                 u.linea_id,
                 u.es_lider,
@@ -526,8 +549,10 @@ async function obtenerResponsables(req, res) {
             FROM usuarios u
             LEFT JOIN areas a
                 ON a.id = u.area_id
+               AND a.unidad_negocio_id = u.unidad_negocio_id
             LEFT JOIN lineas l
                 ON l.id = u.linea_id
+               AND l.unidad_negocio_id = u.unidad_negocio_id
             WHERE ${condiciones.join(' AND ')}
             ORDER BY
                 u.es_lider DESC,
@@ -556,7 +581,9 @@ async function obtenerResponsables(req, res) {
 
 async function obtenerIncidenciaPorId(req, res) {
     try {
-        await asegurarCatalogoTiposFalla();
+        await asegurarCatalogoTiposFalla(
+            req.user.unidad_negocio_id
+        );
 
         const { id } = req.params;
 
@@ -586,10 +613,15 @@ async function obtenerIncidenciaPorId(req, res) {
                 ON t.id = i.turno_id
             LEFT JOIN tipos_falla tf
                 ON tf.clave = i.tipo
+               AND tf.unidad_negocio_id = i.unidad_negocio_id
             WHERE i.id = ?
+              AND i.unidad_negocio_id = ?
             LIMIT 1
             `,
-            [id]
+            [
+                id,
+                req.user.unidad_negocio_id
+            ]
         );
 
         if (incidencias.length === 0) {
@@ -639,7 +671,8 @@ async function crearIncidencia(req, res) {
             area_responsable_id,
             area_destino_id,
             linea_id = null,
-            turno_id = null
+            turno_id = null,
+            unidad_negocio_id
         } = req.body;
 
         if (!titulo || !titulo.trim()) {
@@ -658,9 +691,30 @@ async function crearIncidencia(req, res) {
 
         const areaResponsableId =
             area_responsable_id || area_destino_id;
+        const unidadObjetivoId =
+            req.user.rol === 'super_admin' && unidad_negocio_id
+                ? Number(unidad_negocio_id)
+                : req.user.unidad_negocio_id;
+
+        const [unidades] = await db.query(
+            `
+            SELECT id, activo
+            FROM unidades_negocio
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [unidadObjetivoId]
+        );
+
+        if (unidades.length === 0 || !unidades[0].activo) {
+            return res.status(400).json({
+                success: false,
+                message: 'La unidad de negocio seleccionada no existe o esta desactivada'
+            });
+        }
 
         const areaOrigenId =
-            req.user.rol === 'administrador'
+            esAdministrador(req.user)
                 ? area_origen_id || req.user.area_id
                 : req.user.area_id;
 
@@ -678,7 +732,80 @@ async function crearIncidencia(req, res) {
             });
         }
 
-        const tipoValido = await tipoFallaActivoExiste(tipo);
+        const [catalogosValidos] = await db.query(
+            `
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM areas
+                    WHERE id = ?
+                      AND unidad_negocio_id = ?
+                      AND activo = 1
+                ) AS area_origen_valida,
+                (
+                    SELECT COUNT(*)
+                    FROM areas
+                    WHERE id = ?
+                      AND unidad_negocio_id = ?
+                      AND activo = 1
+                ) AS area_responsable_valida,
+                (
+                    SELECT COUNT(*)
+                    FROM lineas
+                    WHERE (? IS NULL OR id = ?)
+                      AND unidad_negocio_id = ?
+                      AND activo = 1
+                ) AS lineas_validas,
+                (
+                    SELECT COUNT(*)
+                    FROM turnos
+                    WHERE (? IS NULL OR id = ?)
+                      AND unidad_negocio_id = ?
+                      AND activo = 1
+                ) AS turnos_validos
+            `,
+            [
+                areaOrigenId,
+                unidadObjetivoId,
+                areaResponsableId,
+                unidadObjetivoId,
+                linea_id || null,
+                linea_id || null,
+                unidadObjetivoId,
+                turno_id || null,
+                turno_id || null,
+                unidadObjetivoId
+            ]
+        );
+
+        if (
+            Number(catalogosValidos[0].area_origen_valida) === 0 ||
+            Number(catalogosValidos[0].area_responsable_valida) === 0
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: 'Selecciona areas validas de tu unidad de negocio'
+            });
+        }
+
+        if (linea_id && Number(catalogosValidos[0].lineas_validas) === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'La linea seleccionada no pertenece a tu unidad de negocio'
+            });
+        }
+
+        if (turno_id && Number(catalogosValidos[0].turnos_validos) === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'El turno seleccionado no pertenece a tu unidad de negocio'
+            });
+        }
+
+        const tipoValido = await tipoFallaActivoExiste(
+            tipo,
+            unidadObjetivoId
+        );
 
         if (!tipoValido) {
             return res.status(400).json({
@@ -698,6 +825,7 @@ async function crearIncidencia(req, res) {
             `
             INSERT INTO incidencias (
                 titulo,
+                unidad_negocio_id,
                 descripcion,
                 tipo,
                 prioridad,
@@ -711,10 +839,11 @@ async function crearIncidencia(req, res) {
                 usuario_creador_id,
                 usuario_asignado_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'nueva', ?, ?, ?, ?, ?, NULL)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'nueva', ?, ?, ?, ?, ?, NULL)
             `,
             [
                 titulo.trim(),
+                unidadObjetivoId,
                 descripcion.trim(),
                 tipo,
                 prioridad,
@@ -749,6 +878,19 @@ async function crearIncidencia(req, res) {
         }).catch((error) => {
             console.warn(
                 'No fue posible iniciar notificación por correo:',
+                error.message
+            );
+        });
+
+        notificarNuevaIncidencia({
+            incidenciaId: id,
+            titulo: titulo.trim(),
+            prioridad,
+            areaResponsableId,
+            unidadNegocioId: unidadObjetivoId
+        }).catch((error) => {
+            console.warn(
+                'No fue posible iniciar notificaciÃ³n push:',
                 error.message
             );
         });
@@ -788,9 +930,13 @@ async function asignarIncidencia(req, res) {
             SELECT id, estado, fecha_inicio_atencion, area_responsable_id
             FROM incidencias
             WHERE id = ?
+              AND unidad_negocio_id = ?
             LIMIT 1
             `,
-            [id]
+            [
+                id,
+                req.user.unidad_negocio_id
+            ]
         );
 
         if (incidencias.length === 0) {
@@ -818,12 +964,16 @@ async function asignarIncidencia(req, res) {
 
         const [responsables] = await db.query(
             `
-            SELECT id, nombre, area_id, activo
+            SELECT id, nombre, area_id, activo, unidad_negocio_id
             FROM usuarios
             WHERE id = ?
+              AND unidad_negocio_id = ?
             LIMIT 1
             `,
-            [responsable_usuario_id]
+            [
+                responsable_usuario_id,
+                req.user.unidad_negocio_id
+            ]
         );
 
         if (responsables.length === 0) {
@@ -843,7 +993,7 @@ async function asignarIncidencia(req, res) {
         }
 
         if (
-            req.user.rol !== 'administrador' &&
+            !esAdministrador(req.user) &&
             Number(req.user.area_id) !== Number(areaResponsableId)
         ) {
             return res.status(403).json({
@@ -853,7 +1003,7 @@ async function asignarIncidencia(req, res) {
         }
 
         if (
-            req.user.rol !== 'administrador' &&
+            !esAdministrador(req.user) &&
             Number(responsable.area_id) !== Number(areaResponsableId)
         ) {
             return res.status(400).json({
@@ -874,11 +1024,13 @@ async function asignarIncidencia(req, res) {
                 estado = ?,
                 fecha_asignacion = COALESCE(fecha_asignacion, NOW())
             WHERE id = ?
+              AND unidad_negocio_id = ?
             `,
             [
                 responsable_usuario_id,
                 estadoNuevo,
-                id
+                id,
+                req.user.unidad_negocio_id
             ]
         );
 
@@ -928,9 +1080,13 @@ async function cambiarEstadoIncidencia(req, res) {
             SELECT id, estado, fecha_inicio_atencion
             FROM incidencias
             WHERE id = ?
+              AND unidad_negocio_id = ?
             LIMIT 1
             `,
-            [id]
+            [
+                id,
+                req.user.unidad_negocio_id
+            ]
         );
 
         if (incidencias.length === 0) {
@@ -1011,8 +1167,12 @@ async function cambiarEstadoIncidencia(req, res) {
             UPDATE incidencias
             SET ${campos.join(', ')}
             WHERE id = ?
+              AND unidad_negocio_id = ?
             `,
-            valores
+            [
+                ...valores,
+                req.user.unidad_negocio_id
+            ]
         );
 
         await registrarHistorial({
@@ -1059,9 +1219,13 @@ async function agregarComentario(req, res) {
             SELECT id
             FROM incidencias
             WHERE id = ?
+              AND unidad_negocio_id = ?
             LIMIT 1
             `,
-            [id]
+            [
+                id,
+                req.user.unidad_negocio_id
+            ]
         );
 
         if (incidencias.length === 0) {

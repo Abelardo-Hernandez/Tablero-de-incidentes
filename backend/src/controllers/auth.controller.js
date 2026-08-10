@@ -23,18 +23,25 @@ async function iniciarSesion(req, res) {
                 u.correo,
                 u.password,
                 u.rol,
+                u.unidad_negocio_id,
                 u.area_id,
                 u.linea_id,
                 u.es_lider,
                 u.activo,
+                un.nombre AS unidad_negocio_nombre,
                 a.nombre AS area_nombre,
                 l.nombre AS linea_nombre
             FROM usuarios u
+            INNER JOIN unidades_negocio un
+                ON un.id = u.unidad_negocio_id
             LEFT JOIN areas a
                 ON a.id = u.area_id
+               AND a.unidad_negocio_id = u.unidad_negocio_id
             LEFT JOIN lineas l
                 ON l.id = u.linea_id
+               AND l.unidad_negocio_id = u.unidad_negocio_id
             WHERE u.usuario = ?
+              AND un.activo = 1
             LIMIT 1
             `,
             [usuario.trim()]
@@ -74,6 +81,8 @@ async function iniciarSesion(req, res) {
             usuario: usuarioEncontrado.usuario,
             correo: usuarioEncontrado.correo,
             rol: usuarioEncontrado.rol,
+            unidad_negocio_id:
+                usuarioEncontrado.unidad_negocio_id,
             area_id: usuarioEncontrado.area_id,
             linea_id: usuarioEncontrado.linea_id,
             es_lider: Boolean(usuarioEncontrado.es_lider)
@@ -97,6 +106,10 @@ async function iniciarSesion(req, res) {
                 usuario: usuarioEncontrado.usuario,
                 correo: usuarioEncontrado.correo,
                 rol: usuarioEncontrado.rol,
+                unidad_negocio_id:
+                    usuarioEncontrado.unidad_negocio_id,
+                unidad_negocio_nombre:
+                    usuarioEncontrado.unidad_negocio_nombre,
                 area_id: usuarioEncontrado.area_id,
                 area_nombre: usuarioEncontrado.area_nombre,
                 linea_id: usuarioEncontrado.linea_id,
@@ -124,21 +137,36 @@ async function obtenerSesion(req, res) {
                 u.usuario,
                 u.correo,
                 u.rol,
+                u.unidad_negocio_id,
                 u.area_id,
                 u.linea_id,
                 u.es_lider,
                 u.activo,
+                un.nombre AS unidad_negocio_nombre,
                 a.nombre AS area_nombre,
                 l.nombre AS linea_nombre
             FROM usuarios u
+            INNER JOIN unidades_negocio un
+                ON un.id = u.unidad_negocio_id
             LEFT JOIN areas a
                 ON a.id = u.area_id
+               AND a.unidad_negocio_id = u.unidad_negocio_id
             LEFT JOIN lineas l
                 ON l.id = u.linea_id
+               AND l.unidad_negocio_id = u.unidad_negocio_id
             WHERE u.id = ?
+              AND (
+                  ? IS NULL
+                  OR u.unidad_negocio_id = ?
+              )
+              AND un.activo = 1
             LIMIT 1
             `,
-            [req.user.id]
+            [
+                req.user.id,
+                req.user.unidad_negocio_id || null,
+                req.user.unidad_negocio_id
+            ]
         );
 
         if (usuarios.length === 0) {
@@ -157,8 +185,30 @@ async function obtenerSesion(req, res) {
             });
         }
 
+        const tokenActualizado = !req.user.unidad_negocio_id
+            ? jwt.sign(
+                {
+                    id: usuario.id,
+                    nombre: usuario.nombre,
+                    usuario: usuario.usuario,
+                    correo: usuario.correo,
+                    rol: usuario.rol,
+                    unidad_negocio_id: usuario.unidad_negocio_id,
+                    area_id: usuario.area_id,
+                    linea_id: usuario.linea_id,
+                    es_lider: Boolean(usuario.es_lider)
+                },
+                process.env.JWT_SECRET,
+                {
+                    expiresIn:
+                        process.env.JWT_EXPIRES_IN || '8h'
+                }
+            )
+            : null;
+
         return res.json({
             success: true,
+            token: tokenActualizado,
             data: {
                 ...usuario,
                 es_lider: Boolean(usuario.es_lider),

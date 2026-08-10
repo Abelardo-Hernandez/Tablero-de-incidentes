@@ -1,4 +1,5 @@
 import {
+    Bell,
     CheckCircle2,
     ClipboardList,
     Eye,
@@ -13,6 +14,7 @@ import {
     useCallback,
     useEffect,
     useMemo,
+    useRef,
     useState
 } from 'react';
 
@@ -20,13 +22,18 @@ import {
     obtenerAreasActivas,
     obtenerLineasActivas,
     obtenerTiposFallaActivos,
-    obtenerTurnosActivos
+    obtenerTurnosActivos,
+    obtenerUnidadesNegocio
 } from '../../services/catalogos.service';
 
 import {
+    asignarIncidencia,
     obtenerIncidencias,
     obtenerResponsablesIncidencias
 } from '../../services/incidencias.service';
+import {
+    activarPush
+} from '../../services/push.service';
 
 import IncidenciaDetallePanel from './IncidenciaDetallePanel';
 import IncidenciaModal from './IncidenciaModal';
@@ -83,6 +90,7 @@ function IncidenciasPage() {
     const [turnos, setTurnos] = useState([]);
     const [tiposFalla, setTiposFalla] = useState([]);
     const [usuarios, setUsuarios] = useState([]);
+    const [unidadesNegocio, setUnidadesNegocio] = useState([]);
 
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState('');
@@ -90,6 +98,22 @@ function IncidenciasPage() {
     const [modalAbierto, setModalAbierto] = useState(false);
     const [incidenciaSeleccionada, setIncidenciaSeleccionada] =
         useState(null);
+    const [tomandoId, setTomandoId] = useState(null);
+    const [permisoNotificaciones, setPermisoNotificaciones] =
+        useState(() => {
+            if (
+                typeof window === 'undefined' ||
+                !('Notification' in window)
+            ) {
+                return 'unsupported';
+            }
+
+            return window.Notification.permission;
+        });
+    const [registrandoPush, setRegistrandoPush] = useState(false);
+    const [instalacionPwa, setInstalacionPwa] = useState(null);
+    const pendientesRef = useRef(null);
+    const asignadasRef = useRef(null);
 
     const [filtros, setFiltros] = useState({
         buscar: '',
@@ -144,7 +168,10 @@ function IncidenciasPage() {
                     obtenerLineasActivas(),
                     obtenerTurnosActivos(),
                     obtenerTiposFallaActivos(),
-                    obtenerResponsablesIncidencias()
+                    obtenerResponsablesIncidencias(),
+                    usuario?.rol === 'super_admin'
+                        ? obtenerUnidadesNegocio({ activo: true })
+                        : Promise.resolve({ data: [] })
                 ]);
 
                 if (resultados[0].status === 'fulfilled') {
@@ -166,6 +193,10 @@ function IncidenciasPage() {
                 if (resultados[4].status === 'fulfilled') {
                     setUsuarios(resultados[4].value.data || []);
                 }
+
+                if (resultados[5].status === 'fulfilled') {
+                    setUnidadesNegocio(resultados[5].value.data || []);
+                }
             } catch (errorSolicitud) {
                 console.error(
                     'Error al cargar catálogos:',
@@ -175,6 +206,25 @@ function IncidenciasPage() {
         }
 
         cargarCatalogos();
+    }, [usuario?.rol]);
+
+    useEffect(() => {
+        function guardarInstalacion(evento) {
+            evento.preventDefault();
+            setInstalacionPwa(evento);
+        }
+
+        window.addEventListener(
+            'beforeinstallprompt',
+            guardarInstalacion
+        );
+
+        return () => {
+            window.removeEventListener(
+                'beforeinstallprompt',
+                guardarInstalacion
+            );
+        };
     }, []);
 
     const metricas = useMemo(() => {
@@ -217,6 +267,24 @@ function IncidenciasPage() {
         [incidencias, usuario?.id]
     );
 
+    const pendientesMiArea = useMemo(
+        () => {
+            if (!usuario?.area_id) {
+                return [];
+            }
+
+            return incidencias.filter(
+                (incidencia) =>
+                    Number(incidencia.area_responsable_id) ===
+                        Number(usuario.area_id) &&
+                    !incidencia.responsable_usuario_id &&
+                    estadosAbiertos.includes(incidencia.estado)
+            );
+        },
+        [incidencias, usuario?.area_id]
+    );
+    const vistaOperativaMovil = usuario?.rol === 'usuario';
+
     function manejarFiltro(evento) {
         const {
             name,
@@ -229,10 +297,78 @@ function IncidenciasPage() {
         }));
     }
 
+    async function tomarIncidencia(incidencia) {
+        try {
+            setTomandoId(incidencia.id);
+            await asignarIncidencia(incidencia.id, usuario.id);
+            await cargarIncidencias();
+            setIncidenciaSeleccionada({
+                ...incidencia,
+                responsable_usuario_id: usuario.id,
+                responsable_nombre: usuario.nombre,
+                estado:
+                    incidencia.estado === 'nueva'
+                        ? 'asignada'
+                        : incidencia.estado
+            });
+        } catch (errorSolicitud) {
+            window.alert(
+                errorSolicitud.response?.data?.message ||
+                'No fue posible tomar la incidencia.'
+            );
+        } finally {
+            setTomandoId(null);
+        }
+    }
+
+    async function activarAvisosCelular() {
+        try {
+            setRegistrandoPush(true);
+
+            const resultado = await activarPush();
+            setPermisoNotificaciones(resultado.permiso);
+
+            if (!resultado.disponible) {
+                window.alert(
+                    'Las notificaciones push aun no estan configuradas en el servidor.'
+                );
+            }
+        } catch (errorSolicitud) {
+            console.error(
+                'Error al activar notificaciones:',
+                errorSolicitud
+            );
+
+            window.alert(
+                errorSolicitud.response?.data?.message ||
+                'No fue posible activar las notificaciones.'
+            );
+        } finally {
+            setRegistrandoPush(false);
+        }
+    }
+
+    function irASeccion(referencia) {
+        referencia.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+        });
+    }
+
+    async function instalarPwa() {
+        if (!instalacionPwa) {
+            return;
+        }
+
+        instalacionPwa.prompt();
+        await instalacionPwa.userChoice;
+        setInstalacionPwa(null);
+    }
+
     return (
         <div className="mx-auto max-w-[1800px] space-y-6">
-            <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-                <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+            <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
+                <div className="hidden">
                     <div>
                         <div className="flex items-center gap-2 text-sm font-bold text-emerald-700">
                             <ListChecks size={17} />
@@ -258,12 +394,9 @@ function IncidenciasPage() {
                     </button>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                    <p className="text-xs font-bold uppercase text-slate-400">
-                        Resumen actual
-                    </p>
-
-                    <div className="mt-2 divide-y divide-slate-100">
+                <div className="grid gap-4 lg:grid-cols-3 lg:items-center">
+                    
+                    <div className="divide-y divide-slate-100">
                         <ResumenMetrica
                             titulo="Abiertas"
                             valor={metricas.abiertas}
@@ -274,6 +407,9 @@ function IncidenciasPage() {
                             valor={metricas.criticas}
                             tono="red"
                         />
+                    </div>
+
+                    <div className="divide-y divide-slate-100 lg:border-x lg:border-slate-100 lg:px-5">
                         <ResumenMetrica
                             titulo="Sin responsable"
                             valor={metricas.sinResponsable}
@@ -285,11 +421,91 @@ function IncidenciasPage() {
                             tono="blue"
                         />
                     </div>
+
+                    <div className="flex justify-stretch lg:justify-end">
+                        <button
+                            type="button"
+                            onClick={() => setModalAbierto(true)}
+                            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 text-sm font-bold text-white shadow-lg shadow-emerald-700/15 transition hover:bg-emerald-600 lg:max-w-64"
+                        >
+                            <Plus size={18} />
+                            Nueva incidencia
+                        </button>
+                    </div>
                 </div>
             </section>
 
+            {vistaOperativaMovil && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:hidden">
+                    <div className="grid grid-cols-3 gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setModalAbierto(true)}
+                            className="flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl bg-emerald-700 px-2 text-center text-xs font-bold text-white shadow-sm shadow-emerald-700/15"
+                        >
+                            <Plus size={21} />
+                            Reportar
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => irASeccion(pendientesRef)}
+                            className="flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-2 text-center text-xs font-bold text-amber-800"
+                        >
+                            <UserCheck size={21} />
+                            Mi area
+                            <span className="text-[11px] font-semibold text-amber-700/75">
+                                {pendientesMiArea.length} nuevo(s)
+                            </span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => irASeccion(asignadasRef)}
+                            className="flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2 text-center text-xs font-bold text-emerald-800"
+                        >
+                            <Eye size={21} />
+                            Atender
+                            <span className="text-[11px] font-semibold text-emerald-700/75">
+                                {misIncidenciasAsignadas.length} activa(s)
+                            </span>
+                        </button>
+                    </div>
+
+                    {[
+                        'default',
+                        'denied'
+                    ].includes(permisoNotificaciones) && (
+                        <button
+                            type="button"
+                            onClick={activarAvisosCelular}
+                            disabled={registrandoPush}
+                            className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700"
+                        >
+                            <Bell size={16} />
+                            {registrandoPush
+                                ? 'Activando avisos...'
+                                : 'Activar avisos del celular'}
+                        </button>
+                    )}
+
+                    {instalacionPwa && (
+                        <button
+                            type="button"
+                            onClick={instalarPwa}
+                            className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-800"
+                        >
+                            Instalar app en este celular
+                        </button>
+                    )}
+                </section>
+            )}
+
             {misIncidenciasAsignadas.length > 0 && (
-                <section className="rounded-3xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm">
+                <section
+                    ref={asignadasRef}
+                    className="rounded-3xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm"
+                >
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                             <h2 className="font-bold text-emerald-950">
@@ -344,7 +560,87 @@ function IncidenciasPage() {
                 </section>
             )}
 
-            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            {pendientesMiArea.length > 0 && (
+                <section
+                    ref={pendientesRef}
+                    className="rounded-3xl border border-amber-200 bg-amber-50/70 p-5 shadow-sm"
+                >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h2 className="font-bold text-amber-950">
+                                Pendientes de mi área
+                            </h2>
+
+                            <p className="text-sm text-amber-800/70">
+                                Reportes sin responsable para tomar cuando estes disponible.
+                            </p>
+                        </div>
+
+                        <span className="rounded-full bg-white px-3 py-1 text-sm font-bold text-amber-700">
+                            {pendientesMiArea.length} nuevo(s)
+                        </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                        {pendientesMiArea.map((incidencia) => (
+                            <article
+                                key={incidencia.id}
+                                className="flex flex-col gap-3 rounded-2xl border border-amber-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+                            >
+                                <div className="min-w-0">
+                                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">
+                                        {incidencia.folio}
+                                    </p>
+
+                                    <h3 className="mt-1 truncate font-bold text-slate-950">
+                                        {incidencia.titulo}
+                                    </h3>
+
+                                    <p className="mt-1 truncate text-sm text-slate-500">
+                                        {incidencia.linea_nombre || 'Sin línea'} · {incidencia.area_nombre || 'Sin área'}
+                                    </p>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        tomarIncidencia(incidencia)
+                                    }
+                                    disabled={tomandoId === incidencia.id}
+                                    className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 text-sm font-bold text-white transition hover:bg-amber-500 disabled:opacity-60"
+                                >
+                                    <UserCheck size={17} />
+                                    {tomandoId === incidencia.id
+                                        ? 'Tomando...'
+                                        : 'Tomar'}
+                                </button>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {vistaOperativaMovil &&
+                !cargando &&
+                pendientesMiArea.length === 0 &&
+                misIncidenciasAsignadas.length === 0 && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm lg:hidden">
+                    <p className="font-bold text-slate-950">
+                        No tienes atenciones pendientes
+                    </p>
+
+                    <p className="mt-1 text-sm text-slate-500">
+                        Cuando llegue una incidencia de tu area aparecera aqui para tomarla.
+                    </p>
+                </section>
+            )}
+
+            <section
+                className={[
+                    'rounded-3xl border border-slate-200 bg-white p-5 shadow-sm',
+                    vistaOperativaMovil ? 'hidden lg:block' : ''
+                ].join(' ')}
+            >
                 <div className="grid gap-4 xl:grid-cols-[1fr_190px_180px_220px_220px]">
                     <div className="relative">
                         <Search
@@ -452,7 +748,12 @@ function IncidenciasPage() {
             )}
 
             {cargando ? (
-                <section className="grid min-h-96 place-items-center rounded-3xl border border-slate-200 bg-white">
+                <section
+                    className={[
+                        'grid min-h-96 place-items-center rounded-3xl border border-slate-200 bg-white',
+                        vistaOperativaMovil ? 'hidden lg:grid' : ''
+                    ].join(' ')}
+                >
                     <div className="text-center">
                         <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-emerald-600" />
 
@@ -462,7 +763,12 @@ function IncidenciasPage() {
                     </div>
                 </section>
             ) : (
-                <section className="custom-scrollbar flex gap-4 overflow-x-auto pb-2">
+                <section
+                    className={[
+                        'custom-scrollbar flex gap-4 overflow-x-auto pb-2',
+                        vistaOperativaMovil ? 'hidden lg:flex' : ''
+                    ].join(' ')}
+                >
                     {columnas.map((columna) => (
                         <KanbanColumn
                             key={columna.estado}
@@ -490,6 +796,7 @@ function IncidenciasPage() {
                 lineas={lineas}
                 turnos={turnos}
                 tiposFalla={tiposFalla}
+                unidadesNegocio={unidadesNegocio}
                 onCerrar={() => setModalAbierto(false)}
                 onGuardado={cargarIncidencias}
             />

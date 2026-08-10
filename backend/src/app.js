@@ -3,12 +3,14 @@ const cors = require('cors');
 
 const authRoutes = require('./routes/auth.routes');
 const usuariosRoutes = require('./routes/usuarios.routes');
+const unidadesNegocioRoutes = require('./routes/unidades-negocio.routes');
 const areasRoutes = require('./routes/areas.routes');
 const lineasRoutes = require('./routes/lineas.routes');
 const turnosRoutes = require('./routes/turnos.routes');
 const incidenciasRoutes = require('./routes/incidencias.routes');
 const tiposFallaRoutes = require('./routes/tipos-falla.routes');
 const videosRoutes = require('./routes/videos.routes');
+const pushRoutes = require('./routes/push.routes');
 
 const app = express();
 
@@ -27,9 +29,11 @@ app.use('/api/areas', areasRoutes);
 app.use('/api/lineas', lineasRoutes);
 app.use('/api/turnos', turnosRoutes);
 app.use('/api/usuarios', usuariosRoutes);
+app.use('/api/unidades-negocio', unidadesNegocioRoutes);
 app.use('/api/incidencias', incidenciasRoutes);
 app.use('/api/tipos-falla', tiposFallaRoutes);
 app.use('/api/videos', videosRoutes);
+app.use('/api/push', pushRoutes);
 
 
 app.use((req, res) => {

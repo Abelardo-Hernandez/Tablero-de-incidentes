@@ -23,6 +23,10 @@ export async function iniciarSesion(credenciales) {
 export async function obtenerSesion() {
     const response = await api.get('/auth/sesion');
 
+    if (response.data.token) {
+        localStorage.setItem(TOKEN_KEY, response.data.token);
+    }
+
     localStorage.setItem(
         USER_KEY,
         JSON.stringify(response.data.data)

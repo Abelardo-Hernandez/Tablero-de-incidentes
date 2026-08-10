@@ -158,3 +158,35 @@ export async function cambiarEstadoTipoFalla(id, activo) {
 
     return response.data;
 }
+
+export async function obtenerUnidadesNegocio(filtros = {}) {
+    const response = await api.get('/unidades-negocio', {
+        params: filtros
+    });
+
+    return response.data;
+}
+
+export async function crearUnidadNegocio(datos) {
+    const response = await api.post('/unidades-negocio', datos);
+
+    return response.data;
+}
+
+export async function actualizarUnidadNegocio(id, datos) {
+    const response = await api.put(
+        `/unidades-negocio/${id}`,
+        datos
+    );
+
+    return response.data;
+}
+
+export async function cambiarEstadoUnidadNegocio(id, activo) {
+    const response = await api.patch(
+        `/unidades-negocio/${id}/estado`,
+        { activo }
+    );
+
+    return response.data;
+}

@@ -1,5 +1,6 @@
 import {
     Bell,
+    Building2,
     CheckCircle2,
     Clock3,
     Database,
@@ -27,8 +28,11 @@ import {
     obtenerAreas,
     obtenerLineas,
     obtenerTiposFalla,
-    obtenerTurnos
+    obtenerTurnos,
+    obtenerUnidadesNegocio
 } from '../../services/catalogos.service';
+
+import useAuth from '../../hooks/useAuth';
 
 import {
     obtenerUsuarios
@@ -43,6 +47,8 @@ import {
 } from '../../utils/configuracion';
 
 function ConfiguracionPage() {
+    const { usuario } = useAuth();
+    const esSuperAdmin = usuario?.rol === 'super_admin';
     const [configuracion, setConfiguracion] = useState(
         cargarConfiguracion
     );
@@ -54,7 +60,8 @@ function ConfiguracionPage() {
         lineas: [],
         turnos: [],
         tiposFalla: [],
-        usuarios: []
+        usuarios: [],
+        unidadesNegocio: []
     });
 
     useEffect(() => {
@@ -68,13 +75,17 @@ function ConfiguracionPage() {
                     respuestaLineas,
                     respuestaTurnos,
                     respuestaTiposFalla,
-                    respuestaUsuarios
+                    respuestaUsuarios,
+                    respuestaUnidades
                 ] = await Promise.all([
                     obtenerAreas(),
                     obtenerLineas(),
                     obtenerTurnos(),
                     obtenerTiposFalla(),
-                    obtenerUsuarios()
+                    obtenerUsuarios(),
+                    esSuperAdmin
+                        ? obtenerUnidadesNegocio()
+                        : Promise.resolve({ data: [] })
                 ]);
 
                 setCatalogos({
@@ -83,7 +94,9 @@ function ConfiguracionPage() {
                     turnos: respuestaTurnos.data || [],
                     tiposFalla:
                         respuestaTiposFalla.data || [],
-                    usuarios: respuestaUsuarios.data || []
+                    usuarios: respuestaUsuarios.data || [],
+                    unidadesNegocio:
+                        respuestaUnidades.data || []
                 });
             } catch (errorSolicitud) {
                 console.error(
@@ -101,10 +114,11 @@ function ConfiguracionPage() {
         }
 
         cargarCatalogos();
-    }, []);
+    }, [esSuperAdmin]);
 
     const resumen = useMemo(
-        () => [
+        () => {
+            const elementos = [
             {
                 titulo: 'Usuarios',
                 valor: catalogos.usuarios.length,
@@ -150,8 +164,23 @@ function ConfiguracionPage() {
                 ruta: '/tipos-falla',
                 icono: Tag
             }
-        ],
-        [catalogos]
+        ];
+
+            if (esSuperAdmin) {
+                elementos.push({
+                    titulo: 'Unidades',
+                    valor: catalogos.unidadesNegocio.length,
+                    activos: catalogos.unidadesNegocio.filter(
+                        (unidad) => unidad.activo
+                    ).length,
+                    ruta: '/unidades-negocio',
+                    icono: Building2
+                });
+            }
+
+            return elementos;
+        },
+        [catalogos, esSuperAdmin]
     );
 
     function manejarCambio(evento) {
@@ -204,7 +233,7 @@ function ConfiguracionPage() {
                 </section>
             )}
 
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
                 {resumen.map((item) => {
                     const Icono = item.icono;
 

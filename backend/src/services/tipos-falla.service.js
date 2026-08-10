@@ -27,7 +27,7 @@ const TIPOS_FALLA_BASE = [
     }
 ];
 
-let tablaAsegurada = false;
+const unidadesAseguradas = new Set();
 
 function normalizarClave(valor) {
     return String(valor || '')
@@ -40,8 +40,12 @@ function normalizarClave(valor) {
         .slice(0, 80);
 }
 
-async function asegurarCatalogoTiposFalla() {
-    if (tablaAsegurada) {
+async function asegurarCatalogoTiposFalla(unidadNegocioId) {
+    if (!unidadNegocioId) {
+        throw new Error('unidad_negocio_id requerido');
+    }
+
+    if (unidadesAseguradas.has(Number(unidadNegocioId))) {
         return;
     }
 
@@ -49,11 +53,20 @@ async function asegurarCatalogoTiposFalla() {
         `
         CREATE TABLE IF NOT EXISTS tipos_falla (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            clave VARCHAR(80) NOT NULL UNIQUE,
+            unidad_negocio_id INT NOT NULL,
+            clave VARCHAR(80) NOT NULL,
             nombre VARCHAR(120) NOT NULL,
-            activo TINYINT(1) NOT NULL DEFAULT 1,
-            sistema TINYINT(1) NOT NULL DEFAULT 0,
-            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            activo TINYINT NOT NULL DEFAULT 1,
+            sistema TINYINT NOT NULL DEFAULT 0,
+            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_tipos_falla_unidad_clave (
+                unidad_negocio_id,
+                clave
+            ),
+            UNIQUE KEY uq_tipos_falla_unidad_nombre (
+                unidad_negocio_id,
+                nombre
+            )
         )
         `
     );
@@ -63,16 +76,18 @@ async function asegurarCatalogoTiposFalla() {
             db.query(
                 `
                 INSERT INTO tipos_falla (
+                    unidad_negocio_id,
                     clave,
                     nombre,
                     activo,
                     sistema
                 )
-                VALUES (?, ?, 1, 1)
+                VALUES (?, ?, ?, 1, 1)
                 ON DUPLICATE KEY UPDATE
                     nombre = VALUES(nombre)
                 `,
                 [
+                    unidadNegocioId,
                     tipo.clave,
                     tipo.nombre
                 ]
@@ -100,20 +115,29 @@ async function asegurarCatalogoTiposFalla() {
         );
     }
 
-    tablaAsegurada = true;
+    unidadesAseguradas.add(Number(unidadNegocioId));
 }
 
 async function obtenerTiposFallaCatalogo({
+    unidadNegocioId,
     activo,
     buscar
 } = {}) {
-    await asegurarCatalogoTiposFalla();
+    if (unidadNegocioId) {
+        await asegurarCatalogoTiposFalla(unidadNegocioId);
+    }
 
-    const condiciones = [];
+    const condiciones = [
+    ];
     const valores = [];
 
+    if (unidadNegocioId) {
+        condiciones.push('tf.unidad_negocio_id = ?');
+        valores.push(unidadNegocioId);
+    }
+
     if (activo !== undefined && activo !== '') {
-        condiciones.push('activo = ?');
+        condiciones.push('tf.activo = ?');
         valores.push(
             activo === true ||
                 activo === 'true' ||
@@ -125,11 +149,11 @@ async function obtenerTiposFallaCatalogo({
 
     if (buscar) {
         condiciones.push(
-            '(nombre LIKE ? OR clave LIKE ?)'
+            '(tf.nombre LIKE ? OR tf.clave LIKE ? OR un.nombre LIKE ?)'
         );
 
         const termino = `%${buscar.trim()}%`;
-        valores.push(termino, termino);
+        valores.push(termino, termino, termino);
     }
 
     const where = condiciones.length
@@ -139,15 +163,19 @@ async function obtenerTiposFallaCatalogo({
     const [tipos] = await db.query(
         `
         SELECT
-            id,
-            clave,
-            nombre,
-            activo,
-            sistema,
-            fecha_creacion
-        FROM tipos_falla
+            tf.id,
+            tf.unidad_negocio_id,
+            un.nombre AS unidad_negocio_nombre,
+            tf.clave,
+            tf.nombre,
+            tf.activo,
+            tf.sistema,
+            tf.fecha_creacion
+        FROM tipos_falla tf
+        INNER JOIN unidades_negocio un
+            ON un.id = tf.unidad_negocio_id
         ${where}
-        ORDER BY activo DESC, sistema DESC, nombre ASC
+        ORDER BY tf.activo DESC, un.nombre ASC, tf.sistema DESC, tf.nombre ASC
         `,
         valores
     );
@@ -159,18 +187,22 @@ async function obtenerTiposFallaCatalogo({
     }));
 }
 
-async function tipoFallaActivoExiste(clave) {
-    await asegurarCatalogoTiposFalla();
+async function tipoFallaActivoExiste(clave, unidadNegocioId) {
+    await asegurarCatalogoTiposFalla(unidadNegocioId);
 
     const [tipos] = await db.query(
         `
         SELECT id
         FROM tipos_falla
         WHERE clave = ?
+          AND unidad_negocio_id = ?
           AND activo = 1
         LIMIT 1
         `,
-        [clave]
+        [
+            clave,
+            unidadNegocioId
+        ]
     );
 
     return tipos.length > 0;

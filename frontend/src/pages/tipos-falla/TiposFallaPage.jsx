@@ -249,15 +249,16 @@ function TiposFallaPage() {
                     </div>
                 ) : (
                     <div className="custom-scrollbar overflow-x-auto">
-                        <table className="w-full min-w-[820px] table-fixed text-left">
+                        <table className="w-full min-w-[980px] table-fixed text-left">
                             <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-400">
                                 <tr>
-                                    <th className="w-[26%] px-6 py-2.5">Tipo</th>
-                                    <th className="w-[20%] px-6 py-2.5">Clave</th>
-                                    <th className="w-[14%] px-6 py-2.5">Origen</th>
-                                    <th className="w-[14%] px-6 py-2.5">Estado</th>
-                                    <th className="w-[12%] px-6 py-2.5">Creacion</th>
-                                    <th className="w-[14%] py-2.5 pl-6 pr-10">Acciones</th>
+                                    <th className="w-[22%] px-6 py-2.5">Tipo</th>
+                                    <th className="w-[18%] px-6 py-2.5">Clave</th>
+                                    <th className="w-[15%] px-6 py-2.5">Unidad</th>
+                                    <th className="w-[12%] px-6 py-2.5">Origen</th>
+                                    <th className="w-[12%] px-6 py-2.5">Estado</th>
+                                    <th className="w-[10%] px-6 py-2.5">Creacion</th>
+                                    <th className="w-[11%] py-2.5 pl-6 pr-10">Acciones</th>
                                 </tr>
                             </thead>
 
@@ -280,6 +281,12 @@ function TiposFallaPage() {
                                         <td className="py-2.5 pl-6 pr-10">
                                             <p className="max-w-48 truncate text-sm font-semibold text-slate-600">
                                                 {tipo.clave}
+                                            </p>
+                                        </td>
+                                        <td className="px-6 py-2.5">
+                                            <p className="max-w-44 truncate text-sm font-semibold text-slate-700">
+                                                {tipo.unidad_negocio_nombre ||
+                                                    'Sin unidad'}
                                             </p>
                                         </td>
                                         <td className="px-6 py-2.5">

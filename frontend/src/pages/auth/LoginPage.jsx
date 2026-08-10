@@ -59,14 +59,21 @@ function LoginPage() {
         promedioAtencionMinutos: null
     });
 
+    function obtenerRutaInicial(usuario) {
+        return usuario?.rol === 'usuario'
+            ? '/incidencias'
+            : '/';
+    }
+
     useEffect(() => {
         if (
             !cargandoSesion &&
             (usuarioAutenticado || obtenerToken())
         ) {
-            navigate('/', {
-                replace: true
-            });
+            navigate(
+                obtenerRutaInicial(usuarioAutenticado),
+                { replace: true }
+            );
         }
     }, [
         usuarioAutenticado,
@@ -156,9 +163,10 @@ function LoginPage() {
 
             actualizarUsuario(respuesta.data);
 
-            navigate('/', {
-                replace: true
-            });
+            navigate(
+                obtenerRutaInicial(respuesta.data),
+                { replace: true }
+            );
         } catch (errorSolicitud) {
             console.error(
                 'Error al iniciar sesión:',
@@ -259,7 +267,7 @@ function LoginPage() {
                                 </p>
 
                                 <p className="mt-1 text-xs text-slate-400">
-                                    Tiempo promedio de atenciÃ³n
+                                    Tiempo promedio de atención
                                 </p>
                             </div>
 

@@ -6,7 +6,8 @@ import {
 import useAuth from '../hooks/useAuth';
 
 function ProtectedRoute({
-    requiereResponsableArea = false
+    requiereResponsableArea = false,
+    requiereSuperAdmin = false
 }) {
     const {
         usuario,
@@ -37,8 +38,20 @@ function ProtectedRoute({
     }
 
     if (
+        requiereSuperAdmin &&
+        usuario.rol !== 'super_admin'
+    ) {
+        return (
+            <Navigate
+                to="/configuracion"
+                replace
+            />
+        );
+    }
+
+    if (
         requiereResponsableArea &&
-        usuario.rol !== 'administrador' &&
+        !['administrador', 'super_admin'].includes(usuario.rol) &&
         !usuario.es_lider
     ) {
         return (

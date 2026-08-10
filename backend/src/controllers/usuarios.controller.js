@@ -24,23 +24,74 @@ function correoValido(correo) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo);
 }
 
+function esSuperAdmin(usuario) {
+    return usuario?.rol === 'super_admin';
+}
+
+function condicionUnidad(req, alias = 'u') {
+    if (esSuperAdmin(req.user)) {
+        return {
+            sql: '',
+            valores: []
+        };
+    }
+
+    return {
+        sql: `${alias}.unidad_negocio_id = ?`,
+        valores: [req.user.unidad_negocio_id]
+    };
+}
+
+async function validarUnidadActiva(unidadNegocioId) {
+    const [unidades] = await db.query(
+        `
+        SELECT id, activo
+        FROM unidades_negocio
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [unidadNegocioId]
+    );
+
+    return unidades.length > 0 && Boolean(unidades[0].activo);
+}
+
 async function validarAreaYLinea({
     rol,
     areaId,
-    lineaId
+    lineaId,
+    unidadNegocioId
 }) {
-    if (rol === 'administrador') {
+    const rolResponsable =
+        rol === 'administrador' || rol === 'super_admin';
+
+    if (rolResponsable && !areaId && !lineaId) {
         return {
             valido: true,
-            areaId: areaId || null,
-            lineaId: lineaId || null
+            areaId: null,
+            lineaId: null
+        };
+    }
+
+    if (!rolResponsable && !areaId) {
+        return {
+            valido: false,
+            mensaje: 'El area es obligatoria para usuarios normales'
+        };
+    }
+
+    if (lineaId && !areaId) {
+        return {
+            valido: false,
+            mensaje: 'Selecciona un area antes de asignar una linea'
         };
     }
 
     if (!areaId) {
         return {
-            valido: false,
-            mensaje: 'El área es obligatoria para usuarios normales'
+            valido: true,
+            areaId: null,
+            lineaId: null
         };
     }
 
@@ -49,33 +100,37 @@ async function validarAreaYLinea({
         SELECT id, nombre, activo
         FROM areas
         WHERE id = ?
+          AND unidad_negocio_id = ?
         LIMIT 1
         `,
-        [areaId]
+        [
+            areaId,
+            unidadNegocioId
+        ]
     );
 
     if (areas.length === 0) {
         return {
             valido: false,
-            mensaje: 'El área seleccionada no existe'
+            mensaje: 'El area seleccionada no existe'
         };
     }
 
     if (!areas[0].activo) {
         return {
             valido: false,
-            mensaje: 'El área seleccionada está desactivada'
+            mensaje: 'El area seleccionada esta desactivada'
         };
     }
 
     const areaEsProduccion =
-        areas[0].nombre.trim().toLowerCase() === 'producción' ||
-        areas[0].nombre.trim().toLowerCase() === 'produccion';
+        areas[0].nombre.trim().toLowerCase() === 'produccion' ||
+        areas[0].nombre.trim().toLowerCase() === 'producción';
 
-    if (areaEsProduccion && !lineaId) {
+    if (rol === 'usuario' && areaEsProduccion && !lineaId) {
         return {
             valido: false,
-            mensaje: 'La línea es obligatoria para usuarios de Producción'
+            mensaje: 'La linea es obligatoria para usuarios de Produccion'
         };
     }
 
@@ -85,22 +140,26 @@ async function validarAreaYLinea({
             SELECT id, activo
             FROM lineas
             WHERE id = ?
+              AND unidad_negocio_id = ?
             LIMIT 1
             `,
-            [lineaId]
+            [
+                lineaId,
+                unidadNegocioId
+            ]
         );
 
         if (lineas.length === 0) {
             return {
                 valido: false,
-                mensaje: 'La línea seleccionada no existe'
+                mensaje: 'La linea seleccionada no existe'
             };
         }
 
         if (!lineas[0].activo) {
             return {
                 valido: false,
-                mensaje: 'La línea seleccionada está desactivada'
+                mensaje: 'La linea seleccionada esta desactivada'
             };
         }
     }
@@ -122,8 +181,11 @@ async function obtenerUsuarios(req, res) {
             buscar
         } = req.query;
 
-        const condiciones = [];
-        const valores = [];
+        const filtroUnidad = condicionUnidad(req);
+        const condiciones = filtroUnidad.sql
+            ? [filtroUnidad.sql]
+            : [];
+        const valores = [...filtroUnidad.valores];
 
         if (area_id) {
             condiciones.push('u.area_id = ?');
@@ -153,12 +215,14 @@ async function obtenerUsuarios(req, res) {
                     OR u.correo LIKE ?
                     OR a.nombre LIKE ?
                     OR l.nombre LIKE ?
+                    OR un.nombre LIKE ?
                 )
             `);
 
             const termino = `%${buscar.trim()}%`;
 
             valores.push(
+                termino,
                 termino,
                 termino,
                 termino,
@@ -179,21 +243,28 @@ async function obtenerUsuarios(req, res) {
                 u.usuario,
                 u.correo,
                 u.rol,
+                u.unidad_negocio_id,
                 u.area_id,
                 u.linea_id,
                 u.es_lider,
                 u.activo,
                 u.fecha_creacion,
+                un.nombre AS unidad_negocio_nombre,
                 a.nombre AS area_nombre,
                 l.nombre AS linea_nombre
             FROM usuarios u
+            INNER JOIN unidades_negocio un
+                ON un.id = u.unidad_negocio_id
             LEFT JOIN areas a
                 ON a.id = u.area_id
+               AND a.unidad_negocio_id = u.unidad_negocio_id
             LEFT JOIN lineas l
                 ON l.id = u.linea_id
+               AND l.unidad_negocio_id = u.unidad_negocio_id
             ${where}
             ORDER BY
                 u.activo DESC,
+                un.nombre ASC,
                 u.nombre ASC
             `,
             valores
@@ -216,6 +287,10 @@ async function obtenerUsuarios(req, res) {
 async function obtenerUsuarioPorId(req, res) {
     try {
         const { id } = req.params;
+        const filtroUnidad = condicionUnidad(req);
+        const whereUnidad = filtroUnidad.sql
+            ? `AND ${filtroUnidad.sql}`
+            : '';
 
         const [usuarios] = await db.query(
             `
@@ -225,22 +300,32 @@ async function obtenerUsuarioPorId(req, res) {
                 u.usuario,
                 u.correo,
                 u.rol,
+                u.unidad_negocio_id,
                 u.area_id,
                 u.linea_id,
                 u.es_lider,
                 u.activo,
                 u.fecha_creacion,
+                un.nombre AS unidad_negocio_nombre,
                 a.nombre AS area_nombre,
                 l.nombre AS linea_nombre
             FROM usuarios u
+            INNER JOIN unidades_negocio un
+                ON un.id = u.unidad_negocio_id
             LEFT JOIN areas a
                 ON a.id = u.area_id
+               AND a.unidad_negocio_id = u.unidad_negocio_id
             LEFT JOIN lineas l
                 ON l.id = u.linea_id
+               AND l.unidad_negocio_id = u.unidad_negocio_id
             WHERE u.id = ?
+            ${whereUnidad}
             LIMIT 1
             `,
-            [id]
+            [
+                id,
+                ...filtroUnidad.valores
+            ]
         );
 
         if (usuarios.length === 0) {
@@ -272,6 +357,7 @@ async function crearUsuario(req, res) {
             correo,
             password,
             rol = 'usuario',
+            unidad_negocio_id,
             area_id,
             linea_id,
             es_lider = false,
@@ -281,21 +367,42 @@ async function crearUsuario(req, res) {
         if (!nombre || !usuario || !password) {
             return res.status(400).json({
                 success: false,
-                message: 'Nombre, usuario y contraseña son obligatorios'
+                message: 'Nombre, usuario y contrasena son obligatorios'
             });
         }
 
-        if (!['administrador', 'usuario'].includes(rol)) {
+        if (
+            !['super_admin', 'administrador', 'usuario'].includes(rol)
+        ) {
             return res.status(400).json({
                 success: false,
-                message: 'El rol seleccionado no es válido'
+                message: 'El rol seleccionado no es valido'
+            });
+        }
+
+        if (rol === 'super_admin' && !esSuperAdmin(req.user)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Solo un super admin puede crear otro super admin'
             });
         }
 
         if (password.length < 8) {
             return res.status(400).json({
                 success: false,
-                message: 'La contraseña debe tener al menos 8 caracteres'
+                message: 'La contrasena debe tener al menos 8 caracteres'
+            });
+        }
+
+        const unidadObjetivoId =
+            esSuperAdmin(req.user) && unidad_negocio_id
+                ? Number(unidad_negocio_id)
+                : req.user.unidad_negocio_id;
+
+        if (!await validarUnidadActiva(unidadObjetivoId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'La unidad de negocio seleccionada no existe o esta desactivada'
             });
         }
 
@@ -305,7 +412,7 @@ async function crearUsuario(req, res) {
         if (!correoValido(correoNormalizado)) {
             return res.status(400).json({
                 success: false,
-                message: 'El correo no tiene un formato válido'
+                message: 'El correo no tiene un formato valido'
             });
         }
 
@@ -327,14 +434,15 @@ async function crearUsuario(req, res) {
         if (existentes.length > 0) {
             return res.status(409).json({
                 success: false,
-                message: 'El usuario o correo ya está registrado'
+                message: 'El usuario o correo ya esta registrado'
             });
         }
 
         const validacion = await validarAreaYLinea({
             rol,
             areaId: area_id || null,
-            lineaId: linea_id || null
+            lineaId: linea_id || null,
+            unidadNegocioId: unidadObjetivoId
         });
 
         if (!validacion.valido) {
@@ -354,12 +462,13 @@ async function crearUsuario(req, res) {
                 correo,
                 password,
                 rol,
+                unidad_negocio_id,
                 area_id,
                 linea_id,
                 es_lider,
                 activo
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
             [
                 nombre.trim(),
@@ -367,6 +476,7 @@ async function crearUsuario(req, res) {
                 correoNormalizado,
                 passwordHash,
                 rol,
+                unidadObjetivoId,
                 validacion.areaId,
                 validacion.lineaId,
                 Boolean(es_lider),
@@ -394,17 +504,22 @@ async function crearUsuario(req, res) {
 async function actualizarUsuario(req, res) {
     try {
         const { id } = req.params;
-
         const {
             nombre,
             usuario,
             correo,
             rol,
+            unidad_negocio_id,
             area_id,
             linea_id,
             es_lider,
             activo
         } = req.body;
+
+        const filtroUnidad = condicionUnidad(req);
+        const whereUnidad = filtroUnidad.sql
+            ? `AND ${filtroUnidad.sql}`
+            : '';
 
         const [usuariosActuales] = await db.query(
             `
@@ -414,15 +529,20 @@ async function actualizarUsuario(req, res) {
                 usuario,
                 correo,
                 rol,
+                unidad_negocio_id,
                 area_id,
                 linea_id,
                 es_lider,
                 activo
-            FROM usuarios
+            FROM usuarios u
             WHERE id = ?
+            ${whereUnidad}
             LIMIT 1
             `,
-            [id]
+            [
+                id,
+                ...filtroUnidad.valores
+            ]
         );
 
         if (usuariosActuales.length === 0) {
@@ -433,7 +553,6 @@ async function actualizarUsuario(req, res) {
         }
 
         const actual = usuariosActuales[0];
-
         const nuevoNombre = nombre?.trim() || actual.nombre;
         const nuevoUsuario = usuario
             ? usuario.trim().toLowerCase()
@@ -442,34 +561,50 @@ async function actualizarUsuario(req, res) {
             ? normalizarCorreo(correo)
             : actual.correo;
         const nuevoRol = rol || actual.rol;
-
-        if (!correoValido(nuevoCorreo)) {
-            return res.status(400).json({
-                success: false,
-                message: 'El correo no tiene un formato válido'
-            });
-        }
-
+        const nuevaUnidadNegocioId =
+            esSuperAdmin(req.user) && unidad_negocio_id !== undefined
+                ? Number(unidad_negocio_id)
+                : actual.unidad_negocio_id;
         const nuevaAreaId = area_id !== undefined
             ? area_id || null
             : actual.area_id;
-
         const nuevaLineaId = linea_id !== undefined
             ? linea_id || null
             : actual.linea_id;
-
         const nuevoEsLider = es_lider !== undefined
             ? Boolean(es_lider)
             : Boolean(actual.es_lider);
-
         const nuevoActivo = activo !== undefined
             ? Boolean(activo)
             : Boolean(actual.activo);
 
-        if (!['administrador', 'usuario'].includes(nuevoRol)) {
+        if (!correoValido(nuevoCorreo)) {
             return res.status(400).json({
                 success: false,
-                message: 'El rol seleccionado no es válido'
+                message: 'El correo no tiene un formato valido'
+            });
+        }
+
+        if (
+            !['super_admin', 'administrador', 'usuario'].includes(nuevoRol)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: 'El rol seleccionado no es valido'
+            });
+        }
+
+        if (nuevoRol === 'super_admin' && !esSuperAdmin(req.user)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Solo un super admin puede asignar ese rol'
+            });
+        }
+
+        if (!await validarUnidadActiva(nuevaUnidadNegocioId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'La unidad de negocio seleccionada no existe o esta desactivada'
             });
         }
 
@@ -495,14 +630,15 @@ async function actualizarUsuario(req, res) {
         if (duplicados.length > 0) {
             return res.status(409).json({
                 success: false,
-                message: 'El usuario o correo ya está registrado'
+                message: 'El usuario o correo ya esta registrado'
             });
         }
 
         const validacion = await validarAreaYLinea({
             rol: nuevoRol,
             areaId: nuevaAreaId,
-            lineaId: nuevaLineaId
+            lineaId: nuevaLineaId,
+            unidadNegocioId: nuevaUnidadNegocioId
         });
 
         if (!validacion.valido) {
@@ -524,28 +660,32 @@ async function actualizarUsuario(req, res) {
 
         await db.query(
             `
-            UPDATE usuarios
+            UPDATE usuarios u
             SET
                 nombre = ?,
                 usuario = ?,
                 correo = ?,
                 rol = ?,
+                unidad_negocio_id = ?,
                 area_id = ?,
                 linea_id = ?,
                 es_lider = ?,
                 activo = ?
             WHERE id = ?
+            ${whereUnidad}
             `,
             [
                 nuevoNombre,
                 nuevoUsuario,
                 nuevoCorreo,
                 nuevoRol,
+                nuevaUnidadNegocioId,
                 validacion.areaId,
                 validacion.lineaId,
                 nuevoEsLider,
                 nuevoActivo,
-                id
+                id,
+                ...filtroUnidad.valores
             ]
         );
 
@@ -571,25 +711,34 @@ async function cambiarPassword(req, res) {
         if (!nueva_password) {
             return res.status(400).json({
                 success: false,
-                message: 'La nueva contraseña es obligatoria'
+                message: 'La nueva contrasena es obligatoria'
             });
         }
 
         if (nueva_password.length < 8) {
             return res.status(400).json({
                 success: false,
-                message: 'La contraseña debe tener al menos 8 caracteres'
+                message: 'La contrasena debe tener al menos 8 caracteres'
             });
         }
+
+        const filtroUnidad = condicionUnidad(req);
+        const whereUnidad = filtroUnidad.sql
+            ? `AND ${filtroUnidad.sql}`
+            : '';
 
         const [usuarios] = await db.query(
             `
             SELECT id
-            FROM usuarios
+            FROM usuarios u
             WHERE id = ?
+            ${whereUnidad}
             LIMIT 1
             `,
-            [id]
+            [
+                id,
+                ...filtroUnidad.valores
+            ]
         );
 
         if (usuarios.length === 0) {
@@ -599,30 +748,32 @@ async function cambiarPassword(req, res) {
             });
         }
 
-        const passwordHash = await bcrypt.hash(
-            nueva_password,
-            12
-        );
+        const passwordHash = await bcrypt.hash(nueva_password, 12);
 
         await db.query(
             `
-            UPDATE usuarios
+            UPDATE usuarios u
             SET password = ?
             WHERE id = ?
+            ${whereUnidad}
             `,
-            [passwordHash, id]
+            [
+                passwordHash,
+                id,
+                ...filtroUnidad.valores
+            ]
         );
 
         return res.json({
             success: true,
-            message: 'Contraseña actualizada correctamente'
+            message: 'Contrasena actualizada correctamente'
         });
     } catch (error) {
-        console.error('Error al cambiar contraseña:', error);
+        console.error('Error al cambiar contrasena:', error);
 
         return res.status(500).json({
             success: false,
-            message: 'No fue posible cambiar la contraseña'
+            message: 'No fue posible cambiar la contrasena'
         });
     }
 }
@@ -649,15 +800,22 @@ async function cambiarEstadoUsuario(req, res) {
             });
         }
 
+        const filtroUnidad = condicionUnidad(req);
+        const whereUnidad = filtroUnidad.sql
+            ? `AND ${filtroUnidad.sql}`
+            : '';
+
         const [resultado] = await db.query(
             `
-            UPDATE usuarios
+            UPDATE usuarios u
             SET activo = ?
             WHERE id = ?
+            ${whereUnidad}
             `,
             [
                 Boolean(activo),
-                id
+                id,
+                ...filtroUnidad.valores
             ]
         );
 

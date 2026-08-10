@@ -6,9 +6,45 @@ const {
     asegurarCatalogoTiposFalla
 } = require('../services/tipos-falla.service');
 
+function unidadConsulta(req) {
+    return req.user?.rol === 'super_admin'
+        ? undefined
+        : req.user.unidad_negocio_id;
+}
+
+function esSuperAdmin(req) {
+    return req.user?.rol === 'super_admin';
+}
+
+async function obtenerUnidadObjetivo(req, unidadNegocioId) {
+    const unidadObjetivoId =
+        esSuperAdmin(req) && unidadNegocioId
+            ? Number(unidadNegocioId)
+            : req.user.unidad_negocio_id;
+
+    const [unidades] = await db.query(
+        `
+        SELECT id, activo
+        FROM unidades_negocio
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [unidadObjetivoId]
+    );
+
+    if (unidades.length === 0 || !unidades[0].activo) {
+        return null;
+    }
+
+    return unidadObjetivoId;
+}
+
 async function obtenerTiposFalla(req, res) {
     try {
-        const tipos = await obtenerTiposFallaCatalogo(req.query);
+        const tipos = await obtenerTiposFallaCatalogo({
+            ...req.query,
+            unidadNegocioId: unidadConsulta(req)
+        });
 
         return res.json({
             success: true,
@@ -26,12 +62,25 @@ async function obtenerTiposFalla(req, res) {
 
 async function crearTipoFalla(req, res) {
     try {
-        await asegurarCatalogoTiposFalla();
-
         const {
             nombre,
+            unidad_negocio_id,
             activo = true
         } = req.body;
+
+        const unidadObjetivoId = await obtenerUnidadObjetivo(
+            req,
+            unidad_negocio_id
+        );
+
+        if (!unidadObjetivoId) {
+            return res.status(400).json({
+                success: false,
+                message: 'La unidad de negocio seleccionada no existe o esta desactivada'
+            });
+        }
+
+        await asegurarCatalogoTiposFalla(unidadObjetivoId);
 
         if (!nombre || !nombre.trim()) {
             return res.status(400).json({
@@ -55,9 +104,13 @@ async function crearTipoFalla(req, res) {
             SELECT id
             FROM tipos_falla
             WHERE LOWER(nombre) = LOWER(?)
+              AND unidad_negocio_id = ?
             LIMIT 1
             `,
-            [nombreLimpio]
+            [
+                nombreLimpio,
+                unidadObjetivoId
+            ]
         );
 
         if (porNombre.length > 0) {
@@ -76,9 +129,13 @@ async function crearTipoFalla(req, res) {
                 SELECT id
                 FROM tipos_falla
                 WHERE clave = ?
+                  AND unidad_negocio_id = ?
                 LIMIT 1
                 `,
-                [clave]
+                [
+                    clave,
+                    unidadObjetivoId
+                ]
             );
 
             if (existentes.length === 0) {
@@ -94,14 +151,16 @@ async function crearTipoFalla(req, res) {
             INSERT INTO tipos_falla (
                 clave,
                 nombre,
+                unidad_negocio_id,
                 activo,
                 sistema
             )
-            VALUES (?, ?, ?, 0)
+            VALUES (?, ?, ?, ?, 0)
             `,
             [
                 clave,
                 nombreLimpio,
+                unidadObjetivoId,
                 Boolean(activo)
             ]
         );
@@ -126,7 +185,9 @@ async function crearTipoFalla(req, res) {
 
 async function actualizarTipoFalla(req, res) {
     try {
-        await asegurarCatalogoTiposFalla();
+        await asegurarCatalogoTiposFalla(
+            req.user.unidad_negocio_id
+        );
 
         const { id } = req.params;
         const {
@@ -136,12 +197,22 @@ async function actualizarTipoFalla(req, res) {
 
         const [tipos] = await db.query(
             `
-            SELECT id, nombre, activo
+            SELECT id, nombre, activo, unidad_negocio_id
             FROM tipos_falla
             WHERE id = ?
+            ${
+                esSuperAdmin(req)
+                    ? ''
+                    : 'AND unidad_negocio_id = ?'
+            }
             LIMIT 1
             `,
-            [id]
+            esSuperAdmin(req)
+                ? [id]
+                : [
+                    id,
+                    req.user.unidad_negocio_id
+                ]
         );
 
         if (tipos.length === 0) {
@@ -173,11 +244,13 @@ async function actualizarTipoFalla(req, res) {
             SELECT id
             FROM tipos_falla
             WHERE LOWER(nombre) = LOWER(?)
+              AND unidad_negocio_id = ?
               AND id <> ?
             LIMIT 1
             `,
             [
                 nuevoNombre,
+                actual.unidad_negocio_id,
                 id
             ]
         );
@@ -196,11 +269,21 @@ async function actualizarTipoFalla(req, res) {
                 nombre = ?,
                 activo = ?
             WHERE id = ?
+            ${
+                esSuperAdmin(req)
+                    ? ''
+                    : 'AND unidad_negocio_id = ?'
+            }
             `,
             [
                 nuevoNombre,
                 nuevoActivo,
-                id
+                id,
+                ...(
+                    esSuperAdmin(req)
+                        ? []
+                        : [req.user.unidad_negocio_id]
+                )
             ]
         );
 
@@ -220,7 +303,9 @@ async function actualizarTipoFalla(req, res) {
 
 async function cambiarEstadoTipoFalla(req, res) {
     try {
-        await asegurarCatalogoTiposFalla();
+        await asegurarCatalogoTiposFalla(
+            req.user.unidad_negocio_id
+        );
 
         const { id } = req.params;
         const { activo } = req.body;
@@ -237,10 +322,20 @@ async function cambiarEstadoTipoFalla(req, res) {
             UPDATE tipos_falla
             SET activo = ?
             WHERE id = ?
+            ${
+                esSuperAdmin(req)
+                    ? ''
+                    : 'AND unidad_negocio_id = ?'
+            }
             `,
             [
                 Boolean(activo),
-                id
+                id,
+                ...(
+                    esSuperAdmin(req)
+                        ? []
+                        : [req.user.unidad_negocio_id]
+                )
             ]
         );
 

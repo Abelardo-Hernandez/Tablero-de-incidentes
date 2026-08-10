@@ -25,18 +25,24 @@ import {
     obtenerUsuarios
 } from '../../services/usuarios.service';
 
+import useAuth from '../../hooks/useAuth';
+
 import {
     obtenerAreasActivas,
-    obtenerLineasActivas
+    obtenerLineasActivas,
+    obtenerUnidadesNegocio
 } from '../../services/catalogos.service';
 
 import PasswordModal from './PasswordModal';
 import UsuarioModal from './UsuarioModal';
 
 function UsuariosPage() {
+    const { usuario } = useAuth();
+    const esSuperAdmin = usuario?.rol === 'super_admin';
     const [usuarios, setUsuarios] = useState([]);
     const [areas, setAreas] = useState([]);
     const [lineas, setLineas] = useState([]);
+    const [unidadesNegocio, setUnidadesNegocio] = useState([]);
 
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState('');
@@ -97,14 +103,23 @@ function UsuariosPage() {
             try {
                 const [
                     respuestaAreas,
-                    respuestaLineas
+                    respuestaLineas,
+                    respuestaUnidades
                 ] = await Promise.all([
                     obtenerAreasActivas(),
-                    obtenerLineasActivas()
+                    obtenerLineasActivas(),
+                    esSuperAdmin
+                        ? obtenerUnidadesNegocio({
+                            activo: true
+                        })
+                        : Promise.resolve({ data: [] })
                 ]);
 
                 setAreas(respuestaAreas.data || []);
                 setLineas(respuestaLineas.data || []);
+                setUnidadesNegocio(
+                    respuestaUnidades.data || []
+                );
             } catch (errorSolicitud) {
                 console.error(
                     'Error al obtener catálogos:',
@@ -114,7 +129,7 @@ function UsuariosPage() {
         }
 
         cargarCatalogos();
-    }, []);
+    }, [esSuperAdmin]);
 
     function manejarFiltro(evento) {
         const {
@@ -295,15 +310,16 @@ function UsuariosPage() {
                     </div>
                 ) : (
                     <div className="custom-scrollbar overflow-x-auto">
-                        <table className="w-full min-w-[1120px] table-fixed text-left">
+                        <table className="w-full min-w-[1240px] table-fixed text-left">
                             <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-400">
                                 <tr>
-                                    <th className="w-[18%] px-4 py-2.5">Usuario</th>
-                                    <th className="w-[16%] px-4 py-2.5">Correo</th>
+                                    <th className="w-[17%] px-4 py-2.5">Usuario</th>
+                                    <th className="w-[15%] px-4 py-2.5">Correo</th>
+                                    <th className="w-[13%] px-4 py-2.5">Unidad</th>
                                     <th className="w-[9%] px-4 py-2.5">Rol</th>
-                                    <th className="w-[13%] px-4 py-2.5">Área</th>
-                                    <th className="w-[13%] px-4 py-2.5">Línea</th>
-                                    <th className="w-[12%] px-4 py-2.5">Responsabilidad</th>
+                                    <th className="w-[12%] px-4 py-2.5">Área</th>
+                                    <th className="w-[12%] px-4 py-2.5">Línea</th>
+                                    <th className="w-[11%] px-4 py-2.5">Responsabilidad</th>
                                     <th className="w-[7%] px-4 py-2.5">Estado</th>
                                     <th className="w-[12%] py-2.5 pl-4 pr-8">Acciones</th>
                                 </tr>
@@ -346,6 +362,13 @@ function UsuariosPage() {
                                                 <p className="max-w-52 truncate text-sm font-semibold text-slate-700">
                                                     {usuario.correo ||
                                                         'Sin correo'}
+                                                </p>
+                                            </td>
+
+                                            <td className="px-4 py-2.5">
+                                                <p className="max-w-44 truncate text-sm font-semibold text-slate-700">
+                                                    {usuario.unidad_negocio_nombre ||
+                                                        'Sin unidad'}
                                                 </p>
                                             </td>
 
@@ -457,6 +480,7 @@ function UsuariosPage() {
                 usuarioEditar={usuarioSeleccionado}
                 areas={areas}
                 lineas={lineas}
+                unidadesNegocio={unidadesNegocio}
                 onCerrar={cerrarModalUsuario}
                 onGuardado={cargarUsuarios}
             />

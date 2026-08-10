@@ -7,15 +7,59 @@ function convertirTurno(turno) {
     };
 }
 
+function esSuperAdmin(usuario) {
+    return usuario?.rol === 'super_admin';
+}
+
+function filtroUnidad(req, alias = 't') {
+    if (esSuperAdmin(req.user)) {
+        return {
+            sql: '',
+            valores: []
+        };
+    }
+
+    return {
+        sql: `${alias}.unidad_negocio_id = ?`,
+        valores: [req.user.unidad_negocio_id]
+    };
+}
+
+async function obtenerUnidadObjetivo(req, unidadNegocioId) {
+    const unidadObjetivoId =
+        esSuperAdmin(req.user) && unidadNegocioId
+            ? Number(unidadNegocioId)
+            : req.user.unidad_negocio_id;
+
+    const [unidades] = await db.query(
+        `
+        SELECT id, activo
+        FROM unidades_negocio
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [unidadObjetivoId]
+    );
+
+    if (unidades.length === 0 || !unidades[0].activo) {
+        return null;
+    }
+
+    return unidadObjetivoId;
+}
+
 async function obtenerTurnos(req, res) {
     try {
         const { activo } = req.query;
 
-        const condiciones = [];
-        const valores = [];
+        const filtro = filtroUnidad(req);
+        const condiciones = filtro.sql
+            ? [filtro.sql]
+            : [];
+        const valores = [...filtro.valores];
 
         if (activo !== undefined && activo !== '') {
-            condiciones.push('activo = ?');
+            condiciones.push('t.activo = ?');
             valores.push(
                 activo === 'true' || activo === '1' ? 1 : 0
             );
@@ -28,15 +72,19 @@ async function obtenerTurnos(req, res) {
         const [turnos] = await db.query(
             `
             SELECT
-                id,
-                nombre,
-                hora_inicio,
-                hora_fin,
-                activo,
-                fecha_creacion
-            FROM turnos
+                t.id,
+                t.unidad_negocio_id,
+                un.nombre AS unidad_negocio_nombre,
+                t.nombre,
+                t.hora_inicio,
+                t.hora_fin,
+                t.activo,
+                t.fecha_creacion
+            FROM turnos t
+            INNER JOIN unidades_negocio un
+                ON un.id = t.unidad_negocio_id
             ${where}
-            ORDER BY hora_inicio ASC, nombre ASC
+            ORDER BY un.nombre ASC, t.hora_inicio ASC, t.nombre ASC
             `,
             valores
         );
@@ -61,6 +109,7 @@ async function crearTurno(req, res) {
             nombre,
             hora_inicio,
             hora_fin,
+            unidad_negocio_id,
             activo = true
         } = req.body;
 
@@ -72,14 +121,30 @@ async function crearTurno(req, res) {
             });
         }
 
+        const unidadObjetivoId = await obtenerUnidadObjetivo(
+            req,
+            unidad_negocio_id
+        );
+
+        if (!unidadObjetivoId) {
+            return res.status(400).json({
+                success: false,
+                message: 'La unidad de negocio seleccionada no existe o esta desactivada'
+            });
+        }
+
         const [existentes] = await db.query(
             `
             SELECT id
             FROM turnos
             WHERE LOWER(nombre) = LOWER(?)
+              AND unidad_negocio_id = ?
             LIMIT 1
             `,
-            [nombre.trim()]
+            [
+                nombre.trim(),
+                unidadObjetivoId
+            ]
         );
 
         if (existentes.length > 0) {
@@ -95,14 +160,16 @@ async function crearTurno(req, res) {
                 nombre,
                 hora_inicio,
                 hora_fin,
+                unidad_negocio_id,
                 activo
             )
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             `,
             [
                 nombre.trim(),
                 hora_inicio,
                 hora_fin,
+                unidadObjetivoId,
                 Boolean(activo)
             ]
         );
@@ -140,9 +207,19 @@ async function actualizarTurno(req, res) {
             SELECT *
             FROM turnos
             WHERE id = ?
+            ${
+                esSuperAdmin(req.user)
+                    ? ''
+                    : 'AND unidad_negocio_id = ?'
+            }
             LIMIT 1
             `,
-            [id]
+            esSuperAdmin(req.user)
+                ? [id]
+                : [
+                    id,
+                    req.user.unidad_negocio_id
+                ]
         );
 
         if (turnos.length === 0) {
@@ -179,10 +256,15 @@ async function actualizarTurno(req, res) {
             SELECT id
             FROM turnos
             WHERE LOWER(nombre) = LOWER(?)
+              AND unidad_negocio_id = ?
               AND id <> ?
             LIMIT 1
             `,
-            [nuevoNombre, id]
+            [
+                nuevoNombre,
+                actual.unidad_negocio_id,
+                id
+            ]
         );
 
         if (duplicados.length > 0) {
@@ -201,13 +283,23 @@ async function actualizarTurno(req, res) {
                 hora_fin = ?,
                 activo = ?
             WHERE id = ?
+            ${
+                esSuperAdmin(req.user)
+                    ? ''
+                    : 'AND unidad_negocio_id = ?'
+            }
             `,
             [
                 nuevoNombre,
                 nuevaHoraInicio,
                 nuevaHoraFin,
                 nuevoActivo,
-                id
+                id,
+                ...(
+                    esSuperAdmin(req.user)
+                        ? []
+                        : [req.user.unidad_negocio_id]
+                )
             ]
         );
 
@@ -242,8 +334,21 @@ async function cambiarEstadoTurno(req, res) {
             UPDATE turnos
             SET activo = ?
             WHERE id = ?
+            ${
+                esSuperAdmin(req.user)
+                    ? ''
+                    : 'AND unidad_negocio_id = ?'
+            }
             `,
-            [Boolean(activo), id]
+            [
+                Boolean(activo),
+                id,
+                ...(
+                    esSuperAdmin(req.user)
+                        ? []
+                        : [req.user.unidad_negocio_id]
+                )
+            ]
         );
 
         if (resultado.affectedRows === 0) {

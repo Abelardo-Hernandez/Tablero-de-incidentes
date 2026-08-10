@@ -20,6 +20,7 @@ import ReportesPage from './pages/reportes/ReportesPage';
 import TiposFallaPage from './pages/tipos-falla/TiposFallaPage';
 import TurnosPage from './pages/turnos/TurnosPage';
 import TvPage from './pages/tv/TvPage';
+import UnidadesNegocioPage from './pages/unidades-negocio/UnidadesNegocioPage';
 
 import ProtectedRoute from './routes/ProtectedRoute';
 
@@ -74,6 +75,17 @@ function App() {
                             path="tipos-falla"
                             element={<TiposFallaPage />}
                         />
+
+                        <Route
+                            element={
+                                <ProtectedRoute requiereSuperAdmin />
+                            }
+                        >
+                            <Route
+                                path="unidades-negocio"
+                                element={<UnidadesNegocioPage />}
+                            />
+                        </Route>
 
                         <Route
                             element={

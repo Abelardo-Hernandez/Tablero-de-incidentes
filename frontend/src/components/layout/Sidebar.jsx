@@ -64,7 +64,7 @@ function Sidebar({
     usuario
 }) {
     const esAdmin =
-        usuario?.rol === 'administrador';
+        ['administrador', 'super_admin'].includes(usuario?.rol);
     const esResponsableArea =
         esAdmin || Boolean(usuario?.es_lider);
     const [configuracion, setConfiguracion] = useState(

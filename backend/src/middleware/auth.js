@@ -39,10 +39,27 @@ function verificarToken(req, res, next) {
 }
 
 function soloAdministrador(req, res, next) {
-    if (!req.user || req.user.rol !== 'administrador') {
+    if (
+        !req.user ||
+        ![
+            'administrador',
+            'super_admin'
+        ].includes(req.user.rol)
+    ) {
         return res.status(403).json({
             success: false,
-            message: 'No tienes permisos para realizar esta acción'
+            message: 'No tienes permisos para realizar esta accion'
+        });
+    }
+
+    next();
+}
+
+function soloSuperAdmin(req, res, next) {
+    if (!req.user || req.user.rol !== 'super_admin') {
+        return res.status(403).json({
+            success: false,
+            message: 'Solo un super administrador puede realizar esta accion'
         });
     }
 
@@ -51,5 +68,6 @@ function soloAdministrador(req, res, next) {
 
 module.exports = {
     verificarToken,
-    soloAdministrador
+    soloAdministrador,
+    soloSuperAdmin
 };

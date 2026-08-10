@@ -62,6 +62,11 @@ const nombresRutas = {
         subtitulo:
             'Catálogo de casos disponibles en reportes'
     },
+    '/unidades-negocio': {
+        titulo: 'Unidades de negocio',
+        subtitulo:
+            'Administracion general para super administradores'
+    },
     '/reportes': {
         titulo: 'Histórico reciente',
         subtitulo:
@@ -91,8 +96,8 @@ function Header({
         notificacionesAbiertas,
         setNotificacionesAbiertas
     ] = useState(false);
-    const [notificaciones, setNotificaciones] = useState(
-        obtenerNotificaciones
+    const [notificaciones, setNotificaciones] = useState(() =>
+        obtenerNotificaciones(usuario?.unidad_negocio_id)
     );
 
     const menuRef = useRef(null);
@@ -105,6 +110,10 @@ function Header({
             subtitulo:
                 'Gestión operativa en tiempo real'
         };
+
+    const tituloVista = usuario?.unidad_negocio_nombre
+        ? `${datosRuta.titulo} - ${usuario.unidad_negocio_nombre}`
+        : datosRuta.titulo;
 
     useEffect(() => {
         function cerrarAlHacerClickFuera(evento) {
@@ -138,8 +147,21 @@ function Header({
 
     useEffect(() => {
         function actualizarNotificaciones(evento) {
+            const detalle = evento.detail;
+
+            if (
+                detalle?.unidadNegocioId &&
+                Number(detalle.unidadNegocioId) !==
+                    Number(usuario?.unidad_negocio_id)
+            ) {
+                return;
+            }
+
             setNotificaciones(
-                evento.detail || obtenerNotificaciones()
+                detalle?.notificaciones ||
+                    obtenerNotificaciones(
+                        usuario?.unidad_negocio_id
+                    )
             );
         }
 
@@ -164,7 +186,13 @@ function Header({
                 actualizarNotificaciones
             );
         };
-    }, []);
+    }, [usuario?.unidad_negocio_id]);
+
+    useEffect(() => {
+        setNotificaciones(
+            obtenerNotificaciones(usuario?.unidad_negocio_id)
+        );
+    }, [usuario?.unidad_negocio_id]);
 
     function salir() {
         cerrarSesion();
@@ -172,8 +200,10 @@ function Header({
     }
 
     function quitarNotificacion(id) {
-        eliminarNotificacion(id);
-        setNotificaciones(obtenerNotificaciones());
+        eliminarNotificacion(id, usuario?.unidad_negocio_id);
+        setNotificaciones(
+            obtenerNotificaciones(usuario?.unidad_negocio_id)
+        );
     }
 
     const iniciales = usuario?.nombre
@@ -199,7 +229,7 @@ function Header({
 
                     <div className="min-w-0">
                         <h1 className="truncate text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">
-                            {datosRuta.titulo}
+                            {tituloVista}
                         </h1>
 
                         <p className="mt-1 hidden truncate text-sm text-slate-500 sm:block">
