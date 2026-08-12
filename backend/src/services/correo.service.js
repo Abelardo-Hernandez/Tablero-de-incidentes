@@ -95,5 +95,6 @@ async function enviarCorreo({
 }
 
 module.exports = {
+    correoConfigurado,
     enviarCorreo
 };

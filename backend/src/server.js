@@ -2,6 +2,9 @@ require('dotenv').config();
 
 const app = require('./app');
 const db = require('./config/db');
+const {
+    iniciarProgramadorEnvioDiario
+} = require('./services/envio-diario.scheduler');
 
 const PORT = process.env.PORT || 3010;
 
@@ -14,6 +17,8 @@ async function iniciarServidor() {
         connection.release();
 
         app.listen(PORT, () => {
+            iniciarProgramadorEnvioDiario();
+
             console.log('======================================');
             console.log(' Tablero de Incidentes');
             console.log(` Servidor ejecutándose en puerto ${PORT}`);

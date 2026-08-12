@@ -4,9 +4,11 @@ import {
     CheckCircle2,
     Clock3,
     Database,
+    Mail,
     Monitor,
     RotateCcw,
     Save,
+    Send,
     Settings,
     ShieldCheck,
     SlidersHorizontal,
@@ -39,6 +41,12 @@ import {
 } from '../../services/usuarios.service';
 
 import {
+    enviarResumenDiarioPrueba,
+    guardarConfigEnvioDiario as guardarConfigEnvioDiarioServidor,
+    obtenerConfigEnvioDiario
+} from '../../services/configuracion.service';
+
+import {
     cargarConfiguracion,
     configuracionInicial,
     guardarConfiguracion as guardarConfiguracionLocal,
@@ -53,8 +61,16 @@ function ConfiguracionPage() {
         cargarConfiguracion
     );
     const [guardado, setGuardado] = useState(false);
+    const [guardadoEnvio, setGuardadoEnvio] = useState(false);
+    const [enviandoPrueba, setEnviandoPrueba] = useState(false);
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState('');
+    const [errorEnvio, setErrorEnvio] = useState('');
+    const [envioDiario, setEnvioDiario] = useState({
+        activo: false,
+        hora_envio: '17:00',
+        destinatarios: []
+    });
     const [catalogos, setCatalogos] = useState({
         areas: [],
         lineas: [],
@@ -76,7 +92,8 @@ function ConfiguracionPage() {
                     respuestaTurnos,
                     respuestaTiposFalla,
                     respuestaUsuarios,
-                    respuestaUnidades
+                    respuestaUnidades,
+                    respuestaEnvioDiario
                 ] = await Promise.all([
                     obtenerAreas(),
                     obtenerLineas(),
@@ -85,7 +102,8 @@ function ConfiguracionPage() {
                     obtenerUsuarios(),
                     esSuperAdmin
                         ? obtenerUnidadesNegocio()
-                        : Promise.resolve({ data: [] })
+                        : Promise.resolve({ data: [] }),
+                    obtenerConfigEnvioDiario()
                 ]);
 
                 setCatalogos({
@@ -97,6 +115,17 @@ function ConfiguracionPage() {
                     usuarios: respuestaUsuarios.data || [],
                     unidadesNegocio:
                         respuestaUnidades.data || []
+                });
+
+                setEnvioDiario({
+                    activo:
+                        respuestaEnvioDiario.data?.activo || false,
+                    hora_envio:
+                        respuestaEnvioDiario.data?.hora_envio ||
+                        '17:00',
+                    destinatarios:
+                        respuestaEnvioDiario.data?.destinatarios ||
+                        []
                 });
             } catch (errorSolicitud) {
                 console.error(
@@ -182,6 +211,13 @@ function ConfiguracionPage() {
         },
         [catalogos, esSuperAdmin]
     );
+    const usuariosConCorreo = useMemo(
+        () =>
+            catalogos.usuarios.filter(
+                (item) => item.activo && item.correo
+            ),
+        [catalogos.usuarios]
+    );
 
     function manejarCambio(evento) {
         const {
@@ -203,12 +239,90 @@ function ConfiguracionPage() {
         }));
     }
 
-    function guardarConfiguracion(evento) {
+    function manejarCambioEnvio(evento) {
+        const {
+            name,
+            type,
+            checked,
+            value
+        } = evento.target;
+
+        setGuardadoEnvio(false);
+        setErrorEnvio('');
+        setEnvioDiario((actual) => ({
+            ...actual,
+            [name]: type === 'checkbox'
+                ? checked
+                : value
+        }));
+    }
+
+    function manejarDestinatario(usuarioId, seleccionado) {
+        setGuardadoEnvio(false);
+        setErrorEnvio('');
+        setEnvioDiario((actual) => {
+            const actuales = new Set(actual.destinatarios);
+
+            if (seleccionado) {
+                actuales.add(usuarioId);
+            } else {
+                actuales.delete(usuarioId);
+            }
+
+            return {
+                ...actual,
+                destinatarios: [...actuales]
+            };
+        });
+    }
+
+    async function guardarConfiguracion(evento) {
         evento.preventDefault();
 
-        guardarConfiguracionLocal(configuracion);
+        try {
+            setErrorEnvio('');
+            guardarConfiguracionLocal(configuracion);
 
-        setGuardado(true);
+            await guardarConfigEnvioDiarioServidor(envioDiario);
+
+            setGuardado(true);
+            setGuardadoEnvio(true);
+        } catch (errorSolicitud) {
+            console.error(
+                'Error al guardar configuracion:',
+                errorSolicitud
+            );
+
+            setErrorEnvio(
+                errorSolicitud.response?.data?.message ||
+                'No fue posible guardar el envio automatico.'
+            );
+        }
+    }
+
+    async function probarEnvioDiario() {
+        try {
+            setEnviandoPrueba(true);
+            setErrorEnvio('');
+
+            await guardarConfigEnvioDiarioServidor(envioDiario);
+            await enviarResumenDiarioPrueba();
+
+            setGuardadoEnvio(true);
+            window.alert('Resumen diario enviado correctamente.');
+        } catch (errorSolicitud) {
+            console.error(
+                'Error al enviar resumen diario:',
+                errorSolicitud
+            );
+
+            setErrorEnvio(
+                errorSolicitud.response?.data?.message ||
+                'No fue posible enviar el resumen diario.'
+            );
+        } finally {
+            setEnviandoPrueba(false);
+        }
     }
 
     function restaurarValores() {
@@ -424,6 +538,111 @@ function ConfiguracionPage() {
                             onChange={manejarCambio}
                         />
                     </div>
+                </section>
+
+                <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="mb-5 flex items-center gap-3">
+                        <div className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
+                            <Mail size={21} />
+                        </div>
+
+                        <div>
+                            <h2 className="font-bold text-slate-950">
+                                Envio automatico
+                            </h2>
+
+                            <p className="text-sm text-slate-500">
+                                Resumen diario por correo para cierre operativo.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-[1fr_170px]">
+                        <Toggle
+                            label="Enviar resumen diario"
+                            descripcion="El backend enviara el reporte una vez al dia."
+                            name="activo"
+                            checked={envioDiario.activo}
+                            onChange={manejarCambioEnvio}
+                        />
+
+                        <CampoTexto
+                            label="Hora"
+                            name="hora_envio"
+                            type="time"
+                            value={envioDiario.hora_envio}
+                            onChange={manejarCambioEnvio}
+                        />
+                    </div>
+
+                    <div className="mt-4">
+                        <p className="text-sm font-bold text-slate-700">
+                            Destinatarios
+                        </p>
+
+                        <div className="mt-2 max-h-64 overflow-y-auto rounded-2xl border border-slate-200">
+                            {usuariosConCorreo.length > 0 ? (
+                                usuariosConCorreo.map((item) => (
+                                    <label
+                                        key={item.id}
+                                        className="flex items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 last:border-b-0"
+                                    >
+                                        <span className="min-w-0">
+                                            <span className="block truncate text-sm font-bold text-slate-950">
+                                                {item.nombre}
+                                            </span>
+
+                                            <span className="block truncate text-xs text-slate-500">
+                                                {item.correo}
+                                            </span>
+                                        </span>
+
+                                        <input
+                                            type="checkbox"
+                                            checked={envioDiario.destinatarios.includes(
+                                                item.id
+                                            )}
+                                            onChange={(evento) =>
+                                                manejarDestinatario(
+                                                    item.id,
+                                                    evento.target.checked
+                                                )
+                                            }
+                                            className="h-5 w-5 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600"
+                                        />
+                                    </label>
+                                ))
+                            ) : (
+                                <div className="p-4 text-sm text-slate-500">
+                                    No hay usuarios activos con correo registrado.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {errorEnvio && (
+                        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                            {errorEnvio}
+                        </div>
+                    )}
+
+                    {guardadoEnvio && (
+                        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">
+                            Envio automatico guardado.
+                        </div>
+                    )}
+
+                    <button
+                        type="button"
+                        onClick={probarEnvioDiario}
+                        disabled={enviandoPrueba}
+                        className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                        <Send size={16} />
+                        {enviandoPrueba
+                            ? 'Enviando...'
+                            : 'Enviar prueba'}
+                    </button>
                 </section>
 
                 <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">

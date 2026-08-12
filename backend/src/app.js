@@ -11,6 +11,7 @@ const incidenciasRoutes = require('./routes/incidencias.routes');
 const tiposFallaRoutes = require('./routes/tipos-falla.routes');
 const videosRoutes = require('./routes/videos.routes');
 const pushRoutes = require('./routes/push.routes');
+const configuracionRoutes = require('./routes/configuracion.routes');
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use('/api/incidencias', incidenciasRoutes);
 app.use('/api/tipos-falla', tiposFallaRoutes);
 app.use('/api/videos', videosRoutes);
 app.use('/api/push', pushRoutes);
+app.use('/api/configuracion', configuracionRoutes);
 
 
 app.use((req, res) => {
