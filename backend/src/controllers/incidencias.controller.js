@@ -807,6 +807,10 @@ async function crearIncidencia(req, res) {
             unidadObjetivoId
         );
 
+        const prioridadFinal = Boolean(detuvo_linea)
+            ? 'critica'
+            : prioridad;
+
         if (!tipoValido) {
             return res.status(400).json({
                 success: false,
@@ -814,7 +818,7 @@ async function crearIncidencia(req, res) {
             });
         }
 
-        if (!validarPrioridad(prioridad)) {
+        if (!validarPrioridad(prioridadFinal)) {
             return res.status(400).json({
                 success: false,
                 message: 'La prioridad seleccionada no es válida'
@@ -846,7 +850,7 @@ async function crearIncidencia(req, res) {
                 unidadObjetivoId,
                 descripcion.trim(),
                 tipo,
-                prioridad,
+                prioridadFinal,
                 Boolean(detuvo_linea),
                 cantidad_afectada || null,
                 linea_id || null,
@@ -870,7 +874,7 @@ async function crearIncidencia(req, res) {
             incidenciaId: id,
             titulo: titulo.trim(),
             descripcion: descripcion.trim(),
-            prioridad,
+            prioridad: prioridadFinal,
             areaResponsableId,
             areaOrigenId,
             lineaId: linea_id || null,
@@ -885,7 +889,7 @@ async function crearIncidencia(req, res) {
         notificarNuevaIncidencia({
             incidenciaId: id,
             titulo: titulo.trim(),
-            prioridad,
+            prioridad: prioridadFinal,
             areaResponsableId,
             unidadNegocioId: unidadObjetivoId
         }).catch((error) => {

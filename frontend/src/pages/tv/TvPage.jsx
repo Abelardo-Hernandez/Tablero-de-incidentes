@@ -47,6 +47,13 @@ const ordenPrioridad = [
     'baja'
 ];
 
+function obtenerNivelAlertaParo(incidencia) {
+    if (!incidencia.detuvo_linea) return 3;
+    if (incidencia.estado === 'nueva') return 0;
+    if (incidencia.estado === 'asignada') return 1;
+    return 2;
+}
+
 function TvPage() {
     const tvRef = useRef(null);
     const idsVistosRef = useRef(new Set());
@@ -248,6 +255,13 @@ function TvPage() {
                     );
                 })
                 .sort((a, b) => {
+                    const nivelParoA = obtenerNivelAlertaParo(a);
+                    const nivelParoB = obtenerNivelAlertaParo(b);
+
+                    if (nivelParoA !== nivelParoB) {
+                        return nivelParoA - nivelParoB;
+                    }
+
                     const prioridadA =
                         ordenPrioridad.indexOf(
                             a.prioridad
@@ -437,6 +451,13 @@ function IncidenciaFila({
     incidencia,
     nueva
 }) {
+    const paroSinTomar =
+        incidencia.detuvo_linea && incidencia.estado === 'nueva';
+    const paroAsignado =
+        incidencia.detuvo_linea && incidencia.estado === 'asignada';
+    const paroEnAtencion =
+        incidencia.detuvo_linea && incidencia.estado === 'en_proceso';
+
     const segundosTranscurridos = Math.floor(
         Math.max(
             0,
@@ -464,6 +485,24 @@ function IncidenciaFila({
                 ? 'bg-amber-400/15 text-amber-200 ring-amber-300/30'
                 : 'bg-emerald-400/15 text-emerald-200 ring-emerald-300/30';
 
+    const claseIncidencia = paroSinTomar
+        ? 'tv-line-stop-unassigned border-red-300/80 bg-red-950/75'
+        : paroAsignado
+            ? 'tv-line-stop-assigned border-amber-300/55 bg-amber-950/60'
+            : paroEnAtencion
+                ? 'border-sky-300/35 bg-sky-950/45'
+                : incidencia.prioridad === 'critica'
+                    ? 'border-red-400/25 bg-red-400/10'
+                    : 'border-white/10 bg-white/[0.04]';
+
+    const textoAlerta = paroSinTomar
+        ? 'PARO DE LÍNEA · SIN RESPONSABLE'
+        : paroAsignado
+            ? 'PARO DE LÍNEA · ATENDIENDO'
+            : paroEnAtencion
+                ? 'PARO DE LÍNEA · EN PROCESO'
+                : '';
+
     return (
         <article
             className={[
@@ -475,14 +514,24 @@ function IncidenciaFila({
                 minutosTranscurridos > 30
                     ? 'tv-overdue-incident'
                     : '',
-                incidencia.prioridad === 'critica'
-                    ? 'border-red-400/25 bg-red-400/10'
-                    : 'border-white/10 bg-white/[0.04]'
+                claseIncidencia
             ].join(' ')}
         >
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                    <p className="truncate text-sm font-bold uppercase tracking-[0.16em] text-emerald-300">
+                    <p
+                        className={[
+                            'truncate text-sm font-bold uppercase tracking-[0.16em]',
+                            paroSinTomar
+                                ? 'text-red-100'
+                                : paroAsignado
+                                    ? 'text-amber-100'
+                                    : paroEnAtencion
+                                        ? 'text-sky-200'
+                                        : 'text-emerald-300'
+                        ].join(' ')}
+                    >
+                        {textoAlerta && `${textoAlerta} · `}
                         {incidencia.linea_nombre ||
                             'Sin línea asignada'}
                     </p>
