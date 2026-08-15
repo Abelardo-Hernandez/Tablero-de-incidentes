@@ -1252,11 +1252,12 @@ function ReportesPage() {
                         <td>${escaparHtml(prioridades[incidencia.prioridad] || incidencia.prioridad)}</td>
                         <td>${escaparHtml(estados[incidencia.estado] || incidencia.estado)}</td>
                         <td>${escaparHtml(formatearMinutos(calcularTiempoEspera(incidencia)))}</td>
+                        <td>${escaparHtml(formatearMinutos(calcularTiempoAtencion(incidencia)))}</td>
                         <td>${escaparHtml(formatearMinutos(calcularTiempoTotal(incidencia)))}</td>
                     </tr>
                 `)
                 .join('')
-            : '<tr><td colspan="10">Sin reportes creados hoy.</td></tr>';
+            : '<tr><td colspan="11">Sin reportes creados hoy.</td></tr>';
 
         ventana.document.write(`
             <!doctype html>
@@ -1377,6 +1378,7 @@ function ReportesPage() {
                                 <th>Prioridad</th>
                                 <th>Estado</th>
                                 <th>Tiempo de espera</th>
+                                <th>Tiempo de atencion</th>
                                 <th>Tiempo total</th>
                             </tr>
                         </thead>

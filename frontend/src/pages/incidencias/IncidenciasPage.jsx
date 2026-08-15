@@ -6,6 +6,7 @@ import {
     ListChecks,
     PlayCircle,
     Plus,
+    RefreshCw,
     Search,
     UserCheck
 } from 'lucide-react';
@@ -93,6 +94,7 @@ function IncidenciasPage() {
     const [unidadesNegocio, setUnidadesNegocio] = useState([]);
 
     const [cargando, setCargando] = useState(true);
+    const [actualizandoMovil, setActualizandoMovil] = useState(false);
     const [error, setError] = useState('');
 
     const [modalAbierto, setModalAbierto] = useState(false);
@@ -155,6 +157,18 @@ function IncidenciasPage() {
             }
         }
     }, [filtros]);
+
+    async function actualizarIncidenciasMovil() {
+        if (actualizandoMovil) return;
+
+        setActualizandoMovil(true);
+
+        try {
+            await cargarIncidencias(true);
+        } finally {
+            setActualizandoMovil(false);
+        }
+    }
 
     useEffect(() => {
         const temporizador = setTimeout(() => {
@@ -469,11 +483,17 @@ function IncidenciasPage() {
                     <div className="grid grid-cols-3 gap-2">
                         <button
                             type="button"
-                            onClick={() => setModalAbierto(true)}
-                            className="flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl bg-emerald-700 px-2 text-center text-xs font-bold text-white shadow-sm shadow-emerald-700/15"
+                            onClick={actualizarIncidenciasMovil}
+                            disabled={actualizandoMovil}
+                            className="flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2 text-center text-xs font-bold text-blue-800 transition active:bg-blue-100 disabled:cursor-wait disabled:opacity-70"
                         >
-                            <Plus size={21} />
-                            Reportar
+                            <RefreshCw
+                                size={21}
+                                className={actualizandoMovil ? 'animate-spin' : ''}
+                            />
+                            {actualizandoMovil
+                                ? 'Actualizando...'
+                                : 'Actualizar'}
                         </button>
 
                         <button
