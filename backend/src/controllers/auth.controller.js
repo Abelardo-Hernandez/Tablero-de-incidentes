@@ -185,8 +185,7 @@ async function obtenerSesion(req, res) {
             });
         }
 
-        const tokenActualizado = !req.user.unidad_negocio_id
-            ? jwt.sign(
+        const tokenActualizado = jwt.sign(
                 {
                     id: usuario.id,
                     nombre: usuario.nombre,
@@ -203,8 +202,7 @@ async function obtenerSesion(req, res) {
                     expiresIn:
                         process.env.JWT_EXPIRES_IN || '8h'
                 }
-            )
-            : null;
+            );
 
         return res.json({
             success: true,

@@ -21,6 +21,7 @@ const ESTADOS = [
     'nueva',
     'asignada',
     'en_proceso',
+    'pendiente_confirmacion',
     'resuelta',
     'cerrada',
     'cancelada'
@@ -35,8 +36,12 @@ const TRANSICIONES_ESTADO = {
         'cancelada'
     ],
     en_proceso: [
-        'resuelta',
+        'pendiente_confirmacion',
         'cancelada'
+    ],
+    pendiente_confirmacion: [
+        'en_proceso',
+        'cerrada'
     ],
     resuelta: [
         'cerrada'
@@ -49,6 +54,7 @@ const ETIQUETAS_ESTADO = {
     nueva: 'Nueva',
     asignada: 'Asignada',
     en_proceso: 'En proceso',
+    pendiente_confirmacion: 'Pendiente de confirmacion',
     resuelta: 'Resuelta',
     cerrada: 'Cerrada',
     cancelada: 'Cancelada'
@@ -56,6 +62,7 @@ const ETIQUETAS_ESTADO = {
 
 const ACCIONES_ESTADO = {
     en_proceso: 'Atencion iniciada',
+    pendiente_confirmacion: 'Solucion enviada a confirmacion',
     resuelta: 'Incidencia resuelta',
     cerrada: 'Incidencia cerrada',
     cancelada: 'Incidencia cancelada'
@@ -117,6 +124,8 @@ async function registrarHistorial({
         'Incidencia creada': 'creacion',
         'Incidencia asignada': 'asignacion_usuario',
         'Atencion iniciada': 'cambio_estado',
+        'Solucion enviada a confirmacion': 'resolucion',
+        'Falla reportada nuevamente': 'reapertura',
         'Incidencia resuelta': 'resolucion',
         'Incidencia cerrada': 'cierre',
         'Incidencia cancelada': 'cancelacion',
@@ -399,8 +408,8 @@ async function obtenerIncidencias(req, res) {
         if (vista_tv === 'true') {
             condiciones.push(
                 incluir_cerradas_tv === 'true'
-                    ? "i.estado IN ('nueva', 'asignada', 'en_proceso', 'resuelta', 'cerrada')"
-                    : "i.estado IN ('nueva', 'asignada', 'en_proceso')"
+                    ? "i.estado IN ('nueva', 'asignada', 'en_proceso', 'pendiente_confirmacion', 'resuelta', 'cerrada')"
+                    : "i.estado IN ('nueva', 'asignada', 'en_proceso', 'pendiente_confirmacion')"
             );
         }
 
@@ -509,7 +518,7 @@ async function obtenerIncidencias(req, res) {
                AND tf.unidad_negocio_id = i.unidad_negocio_id
             ${where}
             ORDER BY
-                FIELD(i.estado, 'nueva', 'asignada', 'en_proceso', 'resuelta', 'cerrada', 'cancelada'),
+                FIELD(i.estado, 'nueva', 'asignada', 'en_proceso', 'pendiente_confirmacion', 'resuelta', 'cerrada', 'cancelada'),
                 FIELD(i.prioridad, 'critica', 'alta', 'media', 'baja'),
                 i.fecha_creacion DESC
             `,
@@ -982,6 +991,28 @@ async function asignarIncidencia(req, res) {
             });
         }
 
+        const [usuariosSolicitantes] = await db.query(
+            `
+            SELECT id, rol, area_id, unidad_negocio_id, activo
+            FROM usuarios
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [req.user.id]
+        );
+
+        if (
+            usuariosSolicitantes.length === 0 ||
+            !usuariosSolicitantes[0].activo
+        ) {
+            return res.status(403).json({
+                success: false,
+                message: 'El usuario no esta activo o ya no existe'
+            });
+        }
+
+        const usuarioSolicitante = usuariosSolicitantes[0];
+
         const [incidencias] = await db.query(
             `
             SELECT id, estado, fecha_inicio_atencion, area_responsable_id
@@ -992,7 +1023,7 @@ async function asignarIncidencia(req, res) {
             `,
             [
                 id,
-                req.user.unidad_negocio_id
+                usuarioSolicitante.unidad_negocio_id
             ]
         );
 
@@ -1007,6 +1038,7 @@ async function asignarIncidencia(req, res) {
         const areaResponsableId =
             incidencias[0].area_responsable_id;
         const estadosNoAsignables = [
+            'pendiente_confirmacion',
             'resuelta',
             'cerrada',
             'cancelada'
@@ -1029,7 +1061,7 @@ async function asignarIncidencia(req, res) {
             `,
             [
                 responsable_usuario_id,
-                req.user.unidad_negocio_id
+                usuarioSolicitante.unidad_negocio_id
             ]
         );
 
@@ -1050,8 +1082,8 @@ async function asignarIncidencia(req, res) {
         }
 
         if (
-            !esAdministrador(req.user) &&
-            Number(req.user.area_id) !== Number(areaResponsableId)
+            !esAdministrador(usuarioSolicitante) &&
+            Number(usuarioSolicitante.area_id) !== Number(areaResponsableId)
         ) {
             return res.status(403).json({
                 success: false,
@@ -1060,7 +1092,7 @@ async function asignarIncidencia(req, res) {
         }
 
         if (
-            !esAdministrador(req.user) &&
+            !esAdministrador(usuarioSolicitante) &&
             Number(responsable.area_id) !== Number(areaResponsableId)
         ) {
             return res.status(400).json({
@@ -1069,8 +1101,11 @@ async function asignarIncidencia(req, res) {
             });
         }
 
-        const estadoNuevo = estadoAnterior === 'nueva'
-            ? 'asignada'
+        const estadoNuevo = [
+            'nueva',
+            'asignada'
+        ].includes(estadoAnterior)
+            ? 'en_proceso'
             : estadoAnterior;
 
         await db.query(
@@ -1079,15 +1114,21 @@ async function asignarIncidencia(req, res) {
             SET
                 usuario_asignado_id = ?,
                 estado = ?,
-                fecha_asignacion = COALESCE(fecha_asignacion, NOW())
+                fecha_asignacion = COALESCE(fecha_asignacion, NOW()),
+                fecha_inicio_atencion = CASE
+                    WHEN ? = 'en_proceso'
+                    THEN COALESCE(fecha_inicio_atencion, NOW())
+                    ELSE fecha_inicio_atencion
+                END
             WHERE id = ?
               AND unidad_negocio_id = ?
             `,
             [
                 responsable_usuario_id,
                 estadoNuevo,
+                estadoNuevo,
                 id,
-                req.user.unidad_negocio_id
+                usuarioSolicitante.unidad_negocio_id
             ]
         );
 
@@ -1132,9 +1173,34 @@ async function cambiarEstadoIncidencia(req, res) {
             });
         }
 
+        const [usuariosSolicitantes] = await db.query(
+            `
+            SELECT id, rol, area_id, unidad_negocio_id, activo
+            FROM usuarios
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [req.user.id]
+        );
+
+        if (
+            usuariosSolicitantes.length === 0 ||
+            !usuariosSolicitantes[0].activo
+        ) {
+            return res.status(403).json({
+                success: false,
+                message: 'El usuario no esta activo o ya no existe'
+            });
+        }
+
+        const usuarioSolicitante = usuariosSolicitantes[0];
+
         const [incidencias] = await db.query(
             `
-            SELECT id, estado, fecha_inicio_atencion
+            SELECT id, estado, fecha_inicio_atencion,
+                   area_origen_id, area_responsable_id,
+                   unidad_negocio_id, usuario_creador_id,
+                   usuario_asignado_id, titulo
             FROM incidencias
             WHERE id = ?
               AND unidad_negocio_id = ?
@@ -1142,7 +1208,7 @@ async function cambiarEstadoIncidencia(req, res) {
             `,
             [
                 id,
-                req.user.unidad_negocio_id
+                usuarioSolicitante.unidad_negocio_id
             ]
         );
 
@@ -1154,6 +1220,7 @@ async function cambiarEstadoIncidencia(req, res) {
         }
 
         const estadoAnterior = incidencias[0].estado;
+        const incidenciaActual = incidencias[0];
         const errorTransicion = validarTransicionEstado(
             estadoAnterior,
             estado
@@ -1167,7 +1234,7 @@ async function cambiarEstadoIncidencia(req, res) {
         }
 
         if (
-            estado === 'resuelta' &&
+            estado === 'pendiente_confirmacion' &&
             !incidencias[0].fecha_inicio_atencion
         ) {
             return res.status(400).json({
@@ -1176,10 +1243,74 @@ async function cambiarEstadoIncidencia(req, res) {
             });
         }
 
-        if (estado === 'resuelta' && !solucion_aplicada.trim()) {
+        if (
+            estado === 'pendiente_confirmacion' &&
+            !solucion_aplicada.trim()
+        ) {
             return res.status(400).json({
                 success: false,
-                message: 'Debes registrar la solucion aplicada para resolver la incidencia'
+                message: 'Debes registrar la solucion aplicada antes de solicitar confirmacion'
+            });
+        }
+
+        if (
+            estadoAnterior === 'pendiente_confirmacion' &&
+            (
+                (
+                    Number(usuarioSolicitante.id) !==
+                        Number(incidenciaActual.usuario_creador_id) &&
+                    Number(usuarioSolicitante.area_id) !==
+                        Number(incidenciaActual.area_origen_id)
+                ) ||
+                Number(usuarioSolicitante.id) ===
+                    Number(incidenciaActual.usuario_asignado_id)
+            )
+        ) {
+            return res.status(403).json({
+                success: false,
+                message: 'Solo el area que reporto, excepto quien atendio la falla, puede confirmar o rechazar la solucion'
+            });
+        }
+
+        if (
+            estado === 'pendiente_confirmacion' &&
+            !esAdministrador(usuarioSolicitante) &&
+            Number(usuarioSolicitante.area_id) !== Number(incidenciaActual.area_responsable_id) &&
+            Number(usuarioSolicitante.id) !== Number(incidenciaActual.usuario_asignado_id)
+        ) {
+            return res.status(403).json({
+                success: false,
+                message: 'Solo el area responsable puede enviar la solucion a confirmacion'
+            });
+        }
+
+        if (
+            estadoAnterior === 'pendiente_confirmacion' &&
+            estado === 'en_proceso' &&
+            !comentario.trim()
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: 'Indica por que la falla continua'
+            });
+        }
+
+        if (
+            estado === 'cancelada' &&
+            !esAdministrador(usuarioSolicitante) &&
+            Number(usuarioSolicitante.area_id) !==
+                Number(incidenciaActual.area_origen_id)
+        ) {
+            return res.status(403).json({
+                success: false,
+                message: 'Solo el area que reporto o un administrador puede cancelar la incidencia'
+            });
+        }
+
+        if (estado === 'cancelada' && !comentario.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Debes indicar el motivo de la cancelacion'
             });
         }
 
@@ -1194,9 +1325,13 @@ async function cambiarEstadoIncidencia(req, res) {
             campos.push(
                 'fecha_inicio_atencion = COALESCE(fecha_inicio_atencion, NOW())'
             );
+
+            if (estadoAnterior === 'pendiente_confirmacion') {
+                campos.push('fecha_resolucion = NULL');
+            }
         }
 
-        if (estado === 'resuelta') {
+        if (estado === 'pendiente_confirmacion') {
             campos.push(
                 'fecha_resolucion = NOW()',
                 'solucion_aplicada = ?'
@@ -1211,6 +1346,15 @@ async function cambiarEstadoIncidencia(req, res) {
 
         if (estado === 'cerrada' || estado === 'cancelada') {
             campos.push('fecha_cierre = NOW()');
+
+            if (
+                estado === 'cerrada' &&
+                estadoAnterior === 'pendiente_confirmacion'
+            ) {
+                campos.push(
+                    "observacion_cierre = COALESCE(observacion_cierre, 'Solucion confirmada por el area que reporto')"
+                );
+            }
 
             if (estado === 'cerrada' && observacion_cierre.trim()) {
                 campos.push('observacion_cierre = ?');
@@ -1228,14 +1372,18 @@ async function cambiarEstadoIncidencia(req, res) {
             `,
             [
                 ...valores,
-                req.user.unidad_negocio_id
+                usuarioSolicitante.unidad_negocio_id
             ]
         );
 
         await registrarHistorial({
             incidenciaId: id,
             usuarioId: req.user.id,
-            accion: ACCIONES_ESTADO[estado] || `Estado cambiado a ${estado}`,
+            accion:
+                estadoAnterior === 'pendiente_confirmacion' &&
+                estado === 'en_proceso'
+                    ? 'Falla reportada nuevamente'
+                    : ACCIONES_ESTADO[estado] || `Estado cambiado a ${estado}`,
             estadoAnterior,
             estadoNuevo: estado,
             comentario:
@@ -1244,6 +1392,31 @@ async function cambiarEstadoIncidencia(req, res) {
                 observacion_cierre.trim() ||
                 null
         });
+
+        if (estado === 'pendiente_confirmacion') {
+            await crearNotificacionIncidencia({
+                incidenciaId: Number(id),
+                areaId: incidenciaActual.area_origen_id,
+                unidadNegocioId: incidenciaActual.unidad_negocio_id,
+                tipo: 'cambio_estado',
+                titulo: 'Solucion pendiente de confirmacion',
+                mensaje: `${incidenciaActual.titulo}: el area responsable indico que la falla fue atendida. Confirma si ya quedo resuelta.`
+            });
+        }
+
+        if (
+            estadoAnterior === 'pendiente_confirmacion' &&
+            estado === 'en_proceso'
+        ) {
+            await crearNotificacionIncidencia({
+                incidenciaId: Number(id),
+                areaId: incidenciaActual.area_responsable_id,
+                unidadNegocioId: incidenciaActual.unidad_negocio_id,
+                tipo: 'cambio_estado',
+                titulo: 'La falla continua',
+                mensaje: `${incidenciaActual.titulo}: el area que reporto rechazo la solucion. Motivo: ${comentario.trim()}`
+            });
+        }
 
         return res.json({
             success: true,
@@ -1273,7 +1446,7 @@ async function agregarComentario(req, res) {
 
         const [incidencias] = await db.query(
             `
-            SELECT id
+            SELECT id, estado, usuario_asignado_id
             FROM incidencias
             WHERE id = ?
               AND unidad_negocio_id = ?
@@ -1289,6 +1462,18 @@ async function agregarComentario(req, res) {
             return res.status(404).json({
                 success: false,
                 message: 'Incidencia no encontrada'
+            });
+        }
+
+
+        if (
+            incidencias[0].estado === 'pendiente_confirmacion' &&
+            Number(incidencias[0].usuario_asignado_id) ===
+                Number(req.user.id)
+        ) {
+            return res.status(403).json({
+                success: false,
+                message: 'La incidencia esta esperando confirmacion del area que reporto'
             });
         }
 

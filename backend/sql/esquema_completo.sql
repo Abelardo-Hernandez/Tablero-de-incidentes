@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS `incidencias` (
   `titulo` varchar(200) NOT NULL, `descripcion` text NOT NULL, `tipo` varchar(80) NOT NULL DEFAULT 'otro',
   `prioridad` enum('baja','media','alta','critica') NOT NULL DEFAULT 'media',
   `detuvo_linea` tinyint(1) NOT NULL DEFAULT 0, `cantidad_afectada` int unsigned DEFAULT NULL,
-  `estado` enum('nueva','asignada','en_proceso','resuelta','cerrada','cancelada') NOT NULL DEFAULT 'nueva',
+  `estado` enum('nueva','asignada','en_proceso','pendiente_confirmacion','resuelta','cerrada','cancelada') NOT NULL DEFAULT 'nueva',
   `linea_id` int DEFAULT NULL, `turno_id` int DEFAULT NULL, `area_origen_id` int NOT NULL,
   `area_responsable_id` int NOT NULL, `usuario_creador_id` int NOT NULL, `usuario_asignado_id` int DEFAULT NULL,
   `fecha_creacion` timestamp NULL DEFAULT CURRENT_TIMESTAMP, `fecha_asignacion` datetime DEFAULT NULL,
@@ -179,4 +179,3 @@ CREATE TABLE IF NOT EXISTS `config_envio_diario_destinatarios` (
   CONSTRAINT `fk_envio_diario_destinatario_config` FOREIGN KEY (`config_id`) REFERENCES `config_envio_diario` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_envio_diario_destinatario_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-

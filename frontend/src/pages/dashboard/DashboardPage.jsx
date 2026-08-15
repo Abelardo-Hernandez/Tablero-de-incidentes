@@ -31,7 +31,8 @@ import {
 const estadosAbiertos = [
     'nueva',
     'asignada',
-    'en_proceso'
+    'en_proceso',
+    'pendiente_confirmacion'
 ];
 
 function calcularPromedioResolucion(incidencias) {

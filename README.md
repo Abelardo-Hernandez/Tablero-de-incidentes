@@ -9,6 +9,7 @@ Sistema web para registrar, asignar, atender y consultar incidentes operativos p
 - **Base de datos:** MySQL 8 con tablas InnoDB y codificación `utf8mb4`.
 - **Autenticación:** JWT.
 - **Procesos auxiliares:** correo SMTP, Web Push y sincronización de una carpeta local de videos.
+- **Confirmación de soluciones:** cierre automático después de una hora sin respuesta del área reportante.
 
 El navegador conserva únicamente la sesión necesaria para consumir la API. Los usuarios, catálogos, incidentes, comentarios, historial, configuraciones, notificaciones, videos y destinatarios del reporte diario se almacenan en MySQL.
 

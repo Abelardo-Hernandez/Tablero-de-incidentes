@@ -31,7 +31,8 @@ import {
 const estadosActivos = [
     'nueva',
     'asignada',
-    'en_proceso'
+    'en_proceso',
+    'pendiente_confirmacion'
 ];
 
 const estadosTvConCerradas = [
@@ -550,6 +551,8 @@ function IncidenciaFila({
         incidencia.detuvo_linea && incidencia.estado === 'asignada';
     const paroEnAtencion =
         incidencia.detuvo_linea && incidencia.estado === 'en_proceso';
+    const pendienteConfirmacion =
+        incidencia.estado === 'pendiente_confirmacion';
 
     const segundosTranscurridos = Math.floor(
         Math.max(
@@ -584,11 +587,15 @@ function IncidenciaFila({
             ? 'tv-line-stop-assigned border-amber-300/55 bg-amber-950/60'
             : paroEnAtencion
                 ? 'border-sky-300/35 bg-sky-950/45'
+                : pendienteConfirmacion
+                    ? 'border-violet-300/55 bg-violet-950/55'
                 : incidencia.prioridad === 'critica'
                     ? 'border-red-400/25 bg-red-400/10'
                     : 'border-white/10 bg-white/[0.04]';
 
-    const textoAlerta = paroSinTomar
+    const textoAlerta = pendienteConfirmacion
+        ? 'PENDIENTE DE CONFIRMACION'
+        : paroSinTomar
         ? 'PARO DE LÍNEA · SIN RESPONSABLE'
         : paroAsignado
             ? 'PARO DE LÍNEA · ATENDIENDO'

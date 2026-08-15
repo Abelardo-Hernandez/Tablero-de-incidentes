@@ -63,7 +63,7 @@ function MainLayout() {
                     }
                 />
 
-                <main className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
+                <main className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 sm:px-5 lg:px-7">
                     <Outlet />
                 </main>
 

@@ -137,8 +137,8 @@ function Sidebar({
                 className={[
                     'fixed inset-y-0 left-0 z-50 flex flex-col bg-[#071629] text-white shadow-2xl transition-all duration-300 lg:relative lg:translate-x-0',
                     colapsado
-                        ? 'w-[88px]'
-                        : 'w-[270px]',
+                        ? 'w-[80px]'
+                        : 'w-[244px]',
                     abiertoMovil
                         ? 'translate-x-0'
                         : '-translate-x-full'

@@ -36,6 +36,17 @@ html {
     min-height: 100%;
 }
 
+/*
+ * Densidad de escritorio equivalente a utilizar el navegador al 90%.
+ * Se conserva el tamaño normal en móviles para no reducir la legibilidad
+ * ni las áreas táctiles.
+ */
+@media (min-width: 768px) {
+    html {
+        font-size: 90%;
+    }
+}
+
 body {
     margin: 0;
     min-width: 320px;

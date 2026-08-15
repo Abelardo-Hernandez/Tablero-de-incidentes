@@ -8,6 +8,9 @@ const estilos = {
     en_proceso:
         'bg-amber-50 text-amber-800 ring-amber-600/10',
 
+    pendiente_confirmacion:
+        'bg-violet-50 text-violet-700 ring-violet-600/10',
+
     resuelta:
         'bg-teal-50 text-teal-700 ring-teal-600/10',
 
@@ -22,6 +25,7 @@ const etiquetas = {
     nueva: 'Nueva',
     asignada: 'Asignada',
     en_proceso: 'En proceso',
+    pendiente_confirmacion: 'Pendiente de confirmacion',
     resuelta: 'Resuelta',
     cerrada: 'Cerrada',
     cancelada: 'Cancelada'

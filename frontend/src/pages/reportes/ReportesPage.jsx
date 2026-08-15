@@ -41,7 +41,8 @@ import useAuth from '../../hooks/useAuth';
 const estadosAbiertos = [
     'nueva',
     'asignada',
-    'en_proceso'
+    'en_proceso',
+    'pendiente_confirmacion'
 ];
 
 const estadosResueltos = [
@@ -60,6 +61,7 @@ const estados = {
     nueva: 'Nueva',
     asignada: 'Asignada',
     en_proceso: 'En proceso',
+    pendiente_confirmacion: 'Pendiente de confirmacion',
     resuelta: 'Resuelta',
     cerrada: 'Cerrada',
     cancelada: 'Cancelada'
@@ -127,8 +129,8 @@ function formatearMinutos(minutos) {
 
 function obtenerFinOperativo(incidencia) {
     return (
-        incidencia.fecha_cierre ||
         incidencia.fecha_resolucion ||
+        incidencia.fecha_cierre ||
         new Date()
     );
 }
@@ -1123,7 +1125,7 @@ function ReportesPage() {
 
         const tablasResumen = [
             [
-                'Por area que atiende',
+                'Por área que atiende',
                 agruparPor(
                     incidenciasDia,
                     (incidencia) => incidencia.area_nombre
@@ -1178,7 +1180,7 @@ function ReportesPage() {
 
         if (!ventana) {
             window.alert(
-                'No fue posible abrir la ventana de impresion. Revisa el bloqueo de ventanas emergentes.'
+                'No fue posible abrir la ventana de impresión. Revisa el bloqueo de ventanas emergentes.'
             );
             return;
         }

@@ -6,6 +6,9 @@ const {
     iniciarProgramadorEnvioDiario
 } = require('./services/envio-diario.scheduler');
 const {
+    iniciarProgramadorConfirmacionSolucion
+} = require('./services/confirmacion-solucion.scheduler');
+const {
     asegurarTablaPush
 } = require('./services/push.service');
 const {
@@ -39,6 +42,7 @@ async function iniciarServidor() {
 
         app.listen(PORT, () => {
             iniciarProgramadorEnvioDiario();
+            iniciarProgramadorConfirmacionSolucion();
 
             console.log('======================================');
             console.log(' Tablero de Incidentes');

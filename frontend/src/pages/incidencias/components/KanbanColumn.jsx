@@ -14,8 +14,8 @@ function KanbanColumn({
     onSeleccionar
 }) {
     return (
-        <section className="flex min-h-[560px] min-w-[300px] flex-1 flex-col rounded-3xl border border-slate-200 bg-slate-100/70">
-            <header className="border-b border-slate-200 px-4 py-4">
+        <section className="flex h-[580px] min-h-[420px] min-w-[270px] max-h-[70vh] flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-slate-100/70">
+            <header className="shrink-0 border-b border-slate-200 px-4 py-4">
                 <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
                         <div
@@ -49,7 +49,7 @@ function KanbanColumn({
                 </div>
             </header>
 
-            <div className="flex-1 space-y-3 p-3">
+            <div className="custom-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3">
                 {incidencias.length === 0 ? (
                     <div className="grid min-h-48 place-items-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-5 text-center">
                         <div>

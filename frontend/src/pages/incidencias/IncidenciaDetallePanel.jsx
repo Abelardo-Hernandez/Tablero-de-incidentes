@@ -34,6 +34,7 @@ const etiquetasEstado = {
     nueva: 'Nueva',
     asignada: 'Asignada',
     en_proceso: 'En proceso',
+    pendiente_confirmacion: 'Pendiente de confirmacion',
     resuelta: 'Resuelta',
     cerrada: 'Cerrada',
     cancelada: 'Cancelada'
@@ -70,6 +71,9 @@ function IncidenciaDetallePanel({
     const [error, setError] = useState('');
     const [comentario, setComentario] = useState('');
     const [solucionAplicada, setSolucionAplicada] = useState('');
+    const [motivoRechazo, setMotivoRechazo] = useState('');
+    const [motivoCancelacion, setMotivoCancelacion] = useState('');
+    const [modoCancelacion, setModoCancelacion] = useState(false);
     const [responsableId, setResponsableId] = useState('');
 
     useEffect(() => {
@@ -81,6 +85,8 @@ function IncidenciaDetallePanel({
             try {
                 setCargando(true);
                 setError('');
+                setModoCancelacion(false);
+                setMotivoCancelacion('');
 
                 const respuesta = await obtenerIncidenciaPorId(
                     incidencia.id
@@ -134,25 +140,48 @@ function IncidenciaDetallePanel({
     }
 
     const incidenciaActual = detalle || incidencia;
+    const pendienteConfirmacion =
+        incidenciaActual.estado === 'pendiente_confirmacion';
     const puedeAsignarResponsable =
-        ['administrador', 'super_admin'].includes(usuario?.rol) ||
-        Number(usuario?.area_id) ===
-            Number(incidenciaActual.area_responsable_id);
+        !pendienteConfirmacion && (
+            ['administrador', 'super_admin'].includes(usuario?.rol) ||
+            Number(usuario?.area_id) ===
+                Number(incidenciaActual.area_responsable_id)
+        );
     const puedeIniciar = incidenciaActual.estado === 'asignada';
     const puedeResolver = incidenciaActual.estado === 'en_proceso';
     const puedeCapturarSolucion = [
         'asignada',
         'en_proceso'
     ].includes(incidenciaActual.estado);
-    const puedeCerrar = incidenciaActual.estado === 'resuelta';
-    const puedeCancelar = [
+    const puedeConfirmar =
+        pendienteConfirmacion &&
+            (
+                Number(usuario?.id) ===
+                    Number(incidenciaActual.usuario_creador_id) ||
+                Number(usuario?.area_id) ===
+                    Number(incidenciaActual.area_origen_id)
+            ) &&
+            Number(usuario?.id) !==
+                Number(incidenciaActual.responsable_usuario_id);
+    const usuarioQueAtendio =
+        pendienteConfirmacion &&
+        Number(usuario?.id) ===
+            Number(incidenciaActual.responsable_usuario_id);
+    const estadoCancelable = [
         'nueva',
         'asignada',
         'en_proceso'
     ].includes(incidenciaActual.estado);
+    const puedeCancelar =
+        estadoCancelable && (
+            ['administrador', 'super_admin'].includes(usuario?.rol) ||
+            Number(usuario?.area_id) ===
+                Number(incidenciaActual.area_origen_id)
+        );
     const ayudaIniciar = incidenciaActual.estado === 'nueva'
-        ? 'Asigna un responsable antes de iniciar atencion.'
-        : 'La atencion ya fue iniciada o el caso esta cerrado.';
+        ? 'Asigna un responsable antes de iniciar atención.'
+        : 'La atención ya fue iniciada o el caso está cerrado.';
 
     async function refrescarDetalle() {
         const respuesta = await obtenerIncidenciaPorId(
@@ -215,7 +244,7 @@ function IncidenciaDetallePanel({
 
     async function resolver() {
         if (!solucionAplicada.trim()) {
-            setError('Registra la solucion aplicada antes de resolver.');
+            setError('Registra la solución aplicada antes de resolver.');
             return;
         }
 
@@ -232,7 +261,7 @@ function IncidenciaDetallePanel({
 
             await cambiarEstadoIncidencia(
                 incidenciaActual.id,
-                'resuelta',
+                'pendiente_confirmacion',
                 {
                     solucion_aplicada: solucionAplicada.trim()
                 }
@@ -247,6 +276,31 @@ function IncidenciaDetallePanel({
         } finally {
             setGuardando(false);
         }
+    }
+
+    async function rechazarSolucion() {
+        if (!motivoRechazo.trim()) {
+            setError('Indica por que la falla continua.');
+            return;
+        }
+
+        await cambiarEstado('en_proceso', {
+            comentario: motivoRechazo.trim()
+        });
+        setMotivoRechazo('');
+    }
+
+    async function cancelarIncidencia() {
+        if (!motivoCancelacion.trim()) {
+            setError('Indica el motivo de la cancelacion.');
+            return;
+        }
+
+        await cambiarEstado('cancelada', {
+            comentario: motivoCancelacion.trim()
+        });
+        setMotivoCancelacion('');
+        setModoCancelacion(false);
     }
 
     async function comentar(evento) {
@@ -416,7 +470,10 @@ function IncidenciaDetallePanel({
                                                 evento.target.value
                                             )
                                         }
-                                        disabled={guardando}
+                                        disabled={
+                                            guardando ||
+                                            !puedeAsignarResponsable
+                                        }
                                         className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
                                     >
                                         <option value="">
@@ -461,7 +518,7 @@ function IncidenciaDetallePanel({
                                     Acciones
                                 </h3>
 
-                                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                                <div className="mt-4 grid gap-3 sm:grid-cols-2">
                                     <Accion
                                         texto="Iniciar atencion"
                                         icono={PlayCircle}
@@ -479,26 +536,10 @@ function IncidenciaDetallePanel({
                                         }
                                     />
                                     <Accion
-                                        texto="Cerrar"
-                                        icono={CheckCircle2}
-                                        onClick={() =>
-                                            cambiarEstado('cerrada')
-                                        }
-                                        disabled={
-                                            guardando ||
-                                            !puedeCerrar
-                                        }
-                                        ayuda={
-                                            puedeCerrar
-                                                ? ''
-                                                : 'Disponible despues de resolver la incidencia.'
-                                        }
-                                    />
-                                    <Accion
-                                        texto="Cancelar"
+                                        texto="Cancelar reporte"
                                         icono={XCircle}
                                         onClick={() =>
-                                            cambiarEstado('cancelada')
+                                            setModoCancelacion(true)
                                         }
                                         disabled={
                                             guardando ||
@@ -506,14 +547,66 @@ function IncidenciaDetallePanel({
                                         }
                                         ayuda={
                                             puedeCancelar
-                                                ? ''
-                                                : 'La incidencia ya esta en un estado final.'
+                                                ? 'Abre el formulario para indicar el motivo.'
+                                                : estadoCancelable
+                                                    ? 'Solo el area que reporto o un administrador puede cancelar.'
+                                                    : 'La incidencia ya esta en un estado final.'
                                         }
                                         peligro
                                     />
                                 </div>
 
-                                {puedeCapturarSolucion && (
+                                {puedeCancelar && modoCancelacion && (
+                                    <div className="mt-5 rounded-2xl border border-red-100 bg-red-50/60 p-4">
+                                        <label
+                                            htmlFor="motivo-cancelacion"
+                                            className="text-sm font-bold text-red-900"
+                                        >
+                                            Motivo de cancelacion
+                                        </label>
+                                        <textarea
+                                            id="motivo-cancelacion"
+                                            value={motivoCancelacion}
+                                            onChange={(evento) =>
+                                                setMotivoCancelacion(evento.target.value)
+                                            }
+                                            rows={2}
+                                            disabled={guardando}
+                                            placeholder="Explica por que debe cancelarse este reporte."
+                                            className="mt-3 w-full resize-none rounded-xl border border-red-200 bg-white px-4 py-3 outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10"
+                                        />
+                                        <p className="mt-2 text-xs text-red-700">
+                                            Este texto se guardara como motivo de cancelacion. No es una accion realizada ni una solucion aplicada.
+                                        </p>
+                                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setModoCancelacion(false);
+                                                    setMotivoCancelacion('');
+                                                }}
+                                                disabled={guardando}
+                                                className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 font-bold text-slate-700 disabled:opacity-60"
+                                            >
+                                                Volver
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={cancelarIncidencia}
+                                                disabled={
+                                                    guardando ||
+                                                    !motivoCancelacion.trim()
+                                                }
+                                                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 font-bold text-white disabled:opacity-60"
+                                            >
+                                                <XCircle size={18} />
+                                                Enviar cancelacion
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {puedeCapturarSolucion && !modoCancelacion && (
                                     <div className="mt-5 rounded-2xl bg-slate-50 p-4">
                                         <label
                                             htmlFor="solucion-aplicada"
@@ -545,9 +638,60 @@ function IncidenciaDetallePanel({
                                         >
                                             <CheckCircle2 size={18} />
                                             {puedeResolver
-                                                ? 'Resolver'
-                                                : 'Iniciar y resolver'}
+                                                ? 'Enviar a confirmacion'
+                                                : 'Iniciar y enviar'}
                                         </button>
+                                    </div>
+                                )}
+
+                                {pendienteConfirmacion && (
+                                    <div className="mt-5 rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                                        <p className="text-sm font-bold text-violet-950">
+                                            El area responsable indico que la falla fue atendida.
+                                        </p>
+                                        <p className="mt-1 text-sm text-violet-700">
+                                            El area que reporto debe confirmar si la solucion funciono.
+                                        </p>
+                                        <p className="mt-2 text-xs font-semibold text-violet-600">
+                                            Si no hay respuesta, se confirmara automaticamente una hora despues del envio.
+                                        </p>
+
+                                        {puedeConfirmar ? (
+                                            <>
+                                                <textarea
+                                                    value={motivoRechazo}
+                                                    onChange={(evento) => setMotivoRechazo(evento.target.value)}
+                                                    rows={2}
+                                                    disabled={guardando}
+                                                    placeholder="Si la falla continua, explica que sigue ocurriendo."
+                                                    className="mt-3 w-full resize-none rounded-xl border border-violet-200 bg-white px-4 py-3 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10"
+                                                />
+                                                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => cambiarEstado('cerrada')}
+                                                        disabled={guardando}
+                                                        className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 font-bold text-white disabled:opacity-60"
+                                                    >
+                                                        <CheckCircle2 size={18} />
+                                                        Confirmar solucion
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={rechazarSolucion}
+                                                        disabled={guardando || !motivoRechazo.trim()}
+                                                        className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 font-bold text-white disabled:opacity-60"
+                                                    >
+                                                        <XCircle size={18} />
+                                                        La falla continua
+                                                    </button>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <p className="mt-3 text-sm font-semibold text-violet-800">
+                                                Esperando confirmacion del area que reporto.
+                                            </p>
+                                        )}
                                     </div>
                                 )}
                             </section>
@@ -576,7 +720,12 @@ function IncidenciaDetallePanel({
                                                     className="border-l-2 border-emerald-200 pl-4"
                                                 >
                                                     <p className="font-semibold text-slate-800">
-                                                        {evento.accion}
+                                                        {
+                                                            !evento.usuario_nombre &&
+                                                            evento.comentario?.includes('vencimiento del plazo')
+                                                                ? 'Cerrado automaticamente por tiempo'
+                                                                : evento.accion
+                                                        }
                                                     </p>
                                                     <p className="mt-1 text-xs text-slate-400">
                                                         {formatearFechaHora(evento.fecha_creacion)} · {evento.usuario_nombre || 'Sistema'}
@@ -616,12 +765,12 @@ function IncidenciaDetallePanel({
                                             )
                                         }
                                         placeholder="Agregar comentario interno..."
-                                        disabled={guardando}
+                                        disabled={guardando || usuarioQueAtendio}
                                         className="h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
                                     />
                                     <button
                                         type="submit"
-                                        disabled={guardando}
+                                        disabled={guardando || usuarioQueAtendio}
                                         className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-700 text-white transition hover:bg-emerald-600 disabled:opacity-60"
                                         aria-label="Agregar comentario"
                                     >

@@ -189,7 +189,7 @@ function Header({
 
     return (
         <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
-            <div className="flex h-20 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+            <div className="flex h-18 items-center justify-between gap-4 px-4 sm:px-6 lg:px-7">
                 <div className="flex min-w-0 items-center gap-4">
                     <button
                         type="button"

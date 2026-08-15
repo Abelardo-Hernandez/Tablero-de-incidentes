@@ -51,20 +51,20 @@ const columnas = [
         estiloContador: 'bg-blue-50 text-blue-700'
     },
     {
-        estado: 'asignada',
-        titulo: 'Asignadas',
-        descripcion: 'Con responsable',
-        icono: UserCheck,
-        estiloIcono: 'bg-violet-50 text-violet-700',
-        estiloContador: 'bg-violet-50 text-violet-700'
-    },
-    {
         estado: 'en_proceso',
         titulo: 'En proceso',
         descripcion: 'En atención',
         icono: PlayCircle,
         estiloIcono: 'bg-amber-50 text-amber-700',
         estiloContador: 'bg-amber-50 text-amber-700'
+    },
+    {
+        estado: 'pendiente_confirmacion',
+        titulo: 'Por confirmar',
+        descripcion: 'Validación del área reportante',
+        icono: CheckCircle2,
+        estiloIcono: 'bg-violet-50 text-violet-700',
+        estiloContador: 'bg-violet-50 text-violet-700'
     },
     {
         estado: 'resuelta',
@@ -79,7 +79,8 @@ const columnas = [
 const estadosAbiertos = [
     'nueva',
     'asignada',
-    'en_proceso'
+    'en_proceso',
+    'pendiente_confirmacion'
 ];
 
 function IncidenciasPage() {
@@ -124,6 +125,18 @@ function IncidenciasPage() {
         area_id: '',
         linea_id: ''
     });
+
+    const tiposFallaFiltro = useMemo(
+        () => Array.from(
+            new Map(
+                tiposFalla.map((tipo) => [
+                    tipo.clave,
+                    tipo
+                ])
+            ).values()
+        ),
+        [tiposFalla]
+    );
 
     const cargarIncidencias = useCallback(async (silencioso = false) => {
         try {
@@ -304,7 +317,8 @@ function IncidenciasPage() {
                         Number(usuario?.id) &&
                     [
                         'asignada',
-                        'en_proceso'
+                        'en_proceso',
+                        'pendiente_confirmacion'
                     ].includes(incidencia.estado)
             ),
         [incidencias, usuario?.id]
@@ -326,6 +340,24 @@ function IncidenciasPage() {
         },
         [incidencias, usuario?.area_id]
     );
+
+    const pendientesConfirmacion = useMemo(() => {
+        if (!usuario?.id && !usuario?.area_id) return [];
+
+        return incidencias.filter(
+            (incidencia) =>
+                incidencia.estado === 'pendiente_confirmacion' &&
+                (
+                    Number(incidencia.usuario_creador_id) ===
+                        Number(usuario.id) ||
+                    Number(incidencia.area_origen_id) ===
+                        Number(usuario.area_id)
+                ) &&
+                Number(incidencia.responsable_usuario_id) !==
+                    Number(usuario.id)
+        );
+    }, [incidencias, usuario?.area_id, usuario?.id]);
+
     const vistaOperativaMovil = usuario?.rol === 'usuario';
 
     function manejarFiltro(evento) {
@@ -350,8 +382,8 @@ function IncidenciasPage() {
                 responsable_usuario_id: usuario.id,
                 responsable_nombre: usuario.nombre,
                 estado:
-                    incidencia.estado === 'nueva'
-                        ? 'asignada'
+                    ['nueva', 'asignada'].includes(incidencia.estado)
+                        ? 'en_proceso'
                         : incidencia.estado
             });
         } catch (errorSolicitud) {
@@ -550,6 +582,55 @@ function IncidenciasPage() {
                 </section>
             )}
 
+            {pendientesConfirmacion.length > 0 && (
+                <section className="rounded-3xl border border-violet-200 bg-violet-50/80 p-5 shadow-sm lg:hidden">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <h2 className="font-bold text-violet-950">
+                                Soluciones por confirmar
+                            </h2>
+                            <p className="mt-1 text-sm text-violet-800/75">
+                                Verifica si la falla quedó resuelta o indica si continua.
+                            </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-white px-3 py-1 text-sm font-bold text-violet-700">
+                            {pendientesConfirmacion.length}
+                        </span>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                        {pendientesConfirmacion.map((incidencia) => (
+                            <article
+                                key={incidencia.id}
+                                className="rounded-2xl border border-violet-200 bg-white p-4 shadow-sm"
+                            >
+                                <p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-700">
+                                    {incidencia.folio}
+                                </p>
+                                <h3 className="mt-1 font-bold text-slate-950">
+                                    {incidencia.titulo}
+                                </h3>
+                                <p className="mt-1 text-sm text-slate-500">
+                                    {incidencia.linea_nombre || 'Sin linea'} · {incidencia.area_nombre || 'Sin area'}
+                                </p>
+                                <p className="mt-2 line-clamp-2 text-sm text-slate-600">
+                                    {incidencia.solucion_aplicada || 'El area responsable registro una solucion.'}
+                                </p>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setIncidenciaSeleccionada(incidencia)}
+                                    className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 text-sm font-bold text-white transition active:bg-violet-800"
+                                >
+                                    <CheckCircle2 size={18} />
+                                    Revisar y confirmar
+                                </button>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+            )}
+
             {misIncidenciasAsignadas.length > 0 && (
                 <section
                     ref={asignadasRef}
@@ -587,7 +668,13 @@ function IncidenciasPage() {
                                     </h3>
 
                                     <p className="mt-1 truncate text-sm text-slate-500">
-                                        {incidencia.linea_nombre || 'Sin línea'} · {incidencia.area_nombre || 'Sin área'} · {incidencia.estado === 'asignada' ? 'Asignada' : 'En proceso'}
+                                        {incidencia.linea_nombre || 'Sin línea'} · {incidencia.area_nombre || 'Sin área'} · {
+                                            incidencia.estado === 'asignada'
+                                                ? 'Asignada'
+                                                : incidencia.estado === 'pendiente_confirmacion'
+                                                    ? 'Esperando confirmación'
+                                                    : 'En proceso'
+                                        }
                                     </p>
                                 </div>
 
@@ -601,7 +688,9 @@ function IncidenciasPage() {
                                     className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white transition hover:bg-emerald-600"
                                 >
                                     <Eye size={17} />
-                                    Atender
+                                    {incidencia.estado === 'pendiente_confirmacion'
+                                        ? 'Ver estado'
+                                        : 'Atender'}
                                 </button>
                             </article>
                         ))}
@@ -672,14 +761,15 @@ function IncidenciasPage() {
             {vistaOperativaMovil &&
                 !cargando &&
                 pendientesMiArea.length === 0 &&
-                misIncidenciasAsignadas.length === 0 && (
+                misIncidenciasAsignadas.length === 0 &&
+                pendientesConfirmacion.length === 0 && (
                 <section className="rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm lg:hidden">
                     <p className="font-bold text-slate-950">
                         No tienes atenciones pendientes
                     </p>
 
                     <p className="mt-1 text-sm text-slate-500">
-                        Cuando llegue una incidencia de tu area aparecera aqui para tomarla.
+                        Cuando llegue una incidencia de tu área aparecera aqui para tomarla.
                     </p>
                 </section>
             )}
@@ -715,7 +805,7 @@ function IncidenciasPage() {
                         <option value="">
                             Tipo
                         </option>
-                        {tiposFalla.map((tipo) => (
+                        {tiposFallaFiltro.map((tipo) => (
                             <option
                                 key={tipo.clave}
                                 value={tipo.clave}
@@ -828,8 +918,11 @@ function IncidenciasPage() {
                             estiloContador={columna.estiloContador}
                             incidencias={incidencias.filter(
                                 (incidencia) =>
-                                    incidencia.estado ===
-                                    columna.estado
+                                    columna.estado === 'en_proceso'
+                                        ? ['asignada', 'en_proceso']
+                                            .includes(incidencia.estado)
+                                        : incidencia.estado ===
+                                            columna.estado
                             )}
                             onSeleccionar={
                                 setIncidenciaSeleccionada
