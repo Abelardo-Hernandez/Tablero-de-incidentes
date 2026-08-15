@@ -1,6 +1,5 @@
 import {
     AlertTriangle,
-    BarChart3,
     Bell,
     X
 } from 'lucide-react';
@@ -8,57 +7,31 @@ import {
 import {
     useCallback,
     useEffect,
-    useMemo,
     useRef,
     useState
 } from 'react';
 
-import {
-    obtenerIncidencias
-} from '../../services/incidencias.service';
-
 import useAuth from '../../hooks/useAuth';
-
+import {
+    obtenerNotificacionesServidor
+} from '../../services/notificaciones.service';
 import {
     cargarConfiguracion,
     EVENTO_CONFIGURACION
 } from '../../utils/configuracion';
 
-import {
-    agregarNotificacion
-} from '../../utils/notificaciones';
-
-const estadosAbiertos = [
-    'nueva',
-    'asignada',
-    'en_proceso'
-];
-
-const CLAVE_RESUMEN_DIARIO =
-    'tablero_incidentes_resumen_diario';
-
 function reproducirAlerta() {
     try {
         const AudioContext =
             window.AudioContext || window.webkitAudioContext;
-
-        if (!AudioContext) {
-            return;
-        }
+        if (!AudioContext) return;
 
         const contexto = new AudioContext();
         const oscilador = contexto.createOscillator();
         const ganancia = contexto.createGain();
-
         oscilador.type = 'sine';
-        oscilador.frequency.setValueAtTime(
-            880,
-            contexto.currentTime
-        );
-        ganancia.gain.setValueAtTime(
-            0.0001,
-            contexto.currentTime
-        );
+        oscilador.frequency.setValueAtTime(880, contexto.currentTime);
+        ganancia.gain.setValueAtTime(0.0001, contexto.currentTime);
         ganancia.gain.exponentialRampToValueAtTime(
             0.18,
             contexto.currentTime + 0.02
@@ -67,345 +40,158 @@ function reproducirAlerta() {
             0.0001,
             contexto.currentTime + 0.35
         );
-
         oscilador.connect(ganancia);
         ganancia.connect(contexto.destination);
         oscilador.start();
         oscilador.stop(contexto.currentTime + 0.38);
     } catch {
-        // Algunos navegadores bloquean audio sin interacción previa.
+        // Algunos navegadores requieren interacción para reproducir audio.
     }
 }
 
 function mostrarAvisoNavegador(aviso) {
     if (
-        typeof window === 'undefined' ||
         !('Notification' in window) ||
-        window.Notification.permission !== 'granted' ||
-        aviso.tipo === 'resumen'
-    ) {
-        return;
-    }
+        window.Notification.permission !== 'granted'
+    ) return;
 
     try {
         const notificacion = new window.Notification(aviso.titulo, {
             body: aviso.mensaje,
-            tag: `incidencia-${aviso.tipo}`,
+            tag: `notificacion-${aviso.id}`,
             renotify: true
         });
-
-        window.setTimeout(() => {
-            notificacion.close();
-        }, 9000);
+        window.setTimeout(() => notificacion.close(), 9000);
     } catch {
         // El navegador puede bloquear avisos fuera de contextos seguros.
     }
 }
 
-function fechaLocal() {
-    return new Date().toISOString().slice(0, 10);
-}
-
 function SystemNotifications() {
     const { usuario } = useAuth();
-    const unidadNegocioId = usuario?.unidad_negocio_id;
-    const esAdministrador = [
-        'administrador',
-        'super_admin'
-    ].includes(usuario?.rol);
     const [configuracion, setConfiguracion] = useState(
         cargarConfiguracion
     );
     const [avisos, setAvisos] = useState([]);
-    const idsVistosRef = useRef(new Set());
-    const primeraCargaRef = useRef(true);
+    const vistosSesionRef = useRef(new Set());
+    const temporizadoresRef = useRef(new Set());
 
     useEffect(() => {
         function actualizar(evento) {
-            setConfiguracion(
-                evento.detail || cargarConfiguracion()
-            );
+            setConfiguracion(evento.detail || cargarConfiguracion());
         }
 
-        window.addEventListener(
-            EVENTO_CONFIGURACION,
-            actualizar
-        );
-
-        window.addEventListener(
-            'storage',
-            actualizar
-        );
-
+        window.addEventListener(EVENTO_CONFIGURACION, actualizar);
         return () => {
-            window.removeEventListener(
-                EVENTO_CONFIGURACION,
-                actualizar
-            );
-            window.removeEventListener(
-                'storage',
-                actualizar
-            );
+            window.removeEventListener(EVENTO_CONFIGURACION, actualizar);
         };
     }, []);
 
     useEffect(() => {
-        idsVistosRef.current = new Set();
-        primeraCargaRef.current = true;
+        vistosSesionRef.current.clear();
         setAvisos([]);
-    }, [unidadNegocioId]);
+    }, [usuario?.id]);
 
-    const agregarAviso = useCallback((aviso) => {
-        const notificacion = agregarNotificacion(
-            aviso,
-            unidadNegocioId
-        );
-
-        mostrarAvisoNavegador(aviso);
-
-        setAvisos((actual) => [
-            notificacion,
-            ...actual
-        ].slice(0, 4));
-
-        window.setTimeout(() => {
-            setAvisos((actual) =>
-                actual.filter(
-                    (item) => item.id !== notificacion.id
-                )
-            );
-        }, 8500);
-    }, [unidadNegocioId]);
-
-    const crearResumenDiario = useCallback(
-        (incidencias) => {
-            if (!configuracion.resumenDiario) {
-                return;
-            }
-
-            const hoy = fechaLocal();
-            const claveHoy =
-                `${CLAVE_RESUMEN_DIARIO}:unidad_${unidadNegocioId || 'sin_unidad'}:${hoy}`;
-
-            if (localStorage.getItem(claveHoy)) {
-                return;
-            }
-
-            const abiertas = incidencias.filter(
-                (incidencia) =>
-                    estadosAbiertos.includes(
-                        incidencia.estado
-                    )
-            );
-
-            const criticas = abiertas.filter(
-                (incidencia) =>
-                    incidencia.prioridad === 'critica'
-            );
-
-            const resueltasHoy = incidencias.filter(
-                (incidencia) =>
-                    [
-                        'resuelta',
-                        'cerrada'
-                    ].includes(incidencia.estado) &&
-                    String(
-                        incidencia.fecha_resolucion ||
-                            incidencia.fecha_cierre ||
-                            incidencia.fecha_actualizacion ||
-                            ''
-                    ).startsWith(hoy)
-            );
-
-            localStorage.setItem(claveHoy, 'true');
-            agregarAviso({
-                tipo: 'resumen',
-                titulo: 'Resumen diario',
-                mensaje: `${abiertas.length} abiertas, ${criticas.length} críticas y ${resueltasHoy.length} resueltas hoy.`
-            });
-        },
-        [
-            agregarAviso,
-            configuracion.resumenDiario,
-            unidadNegocioId
-        ]
-    );
-
-    const revisarIncidencias = useCallback(async () => {
-        if (
-            !unidadNegocioId ||
-            !configuracion.notificacionesPantalla &&
-            !configuracion.sonidoAlertas &&
-            !configuracion.resumenDiario
-        ) {
-            return;
-        }
+    const revisarNotificaciones = useCallback(async () => {
+        if (!usuario?.id || !configuracion.notificacionesPantalla) return;
 
         try {
-            const respuesta = await obtenerIncidencias();
-            const incidencias = respuesta.data || [];
-            const incidenciasParaAviso = esAdministrador
-                ? incidencias
-                : incidencias.filter(
-                    (incidencia) =>
-                        Number(incidencia.area_responsable_id) ===
-                        Number(usuario?.area_id)
-                );
-            const abiertas = incidenciasParaAviso.filter(
-                (incidencia) =>
-                    estadosAbiertos.includes(
-                        incidencia.estado
-                    )
-            );
-            const idsAbiertas = new Set(
-                abiertas.map((incidencia) => incidencia.id)
+            const respuesta = await obtenerNotificacionesServidor();
+            const nuevas = (respuesta.data || []).filter(
+                (aviso) => !vistosSesionRef.current.has(aviso.id)
             );
 
-            if (primeraCargaRef.current) {
-                idsVistosRef.current = idsAbiertas;
-                primeraCargaRef.current = false;
-                crearResumenDiario(incidencias);
-                return;
-            }
+            if (nuevas.length === 0) return;
 
-            const nuevas = abiertas.filter(
-                (incidencia) =>
-                    !idsVistosRef.current.has(incidencia.id)
-            );
+            nuevas.forEach((aviso) => vistosSesionRef.current.add(aviso.id));
+            setAvisos((actual) => [...nuevas, ...actual].slice(0, 4));
 
-            if (nuevas.length > 0) {
-                const criticas = nuevas.filter(
-                    (incidencia) =>
-                        incidencia.prioridad === 'critica'
-                );
+            nuevas.forEach((aviso) => {
+                const esCritica = aviso.titulo
+                    .toLowerCase()
+                    .includes('crítica');
 
-                if (configuracion.notificacionesPantalla) {
-                    agregarAviso({
-                        tipo:
-                            criticas.length > 0
-                                ? 'critica'
-                                : 'nueva',
-                        titulo:
-                            nuevas.length === 1
-                                ? 'Nueva incidencia'
-                                : 'Nuevas incidencias',
-                        mensaje:
-                            nuevas.length === 1
-                                ? nuevas[0].titulo
-                                : `${nuevas.length} incidencias nuevas registradas.`
-                    });
-                }
-
-                if (
-                    configuracion.sonidoAlertas &&
-                    criticas.length > 0
-                ) {
+                mostrarAvisoNavegador(aviso);
+                if (esCritica && configuracion.sonidoAlertas) {
                     reproducirAlerta();
                 }
-            }
 
-            idsVistosRef.current = idsAbiertas;
+                const temporizador = window.setTimeout(() => {
+                    setAvisos((actual) =>
+                        actual.filter((item) => item.id !== aviso.id)
+                    );
+                    temporizadoresRef.current.delete(temporizador);
+                }, 8500);
+                temporizadoresRef.current.add(temporizador);
+            });
         } catch (error) {
-            console.error(
-                'Error al revisar notificaciones:',
-                error
-            );
+            console.error('Error al revisar notificaciones:', error);
         }
     }, [
-        agregarAviso,
-        configuracion,
-        crearResumenDiario,
-        esAdministrador,
-        unidadNegocioId,
-        usuario?.area_id
+        configuracion.notificacionesPantalla,
+        configuracion.sonidoAlertas,
+        usuario?.id
     ]);
 
     useEffect(() => {
-        revisarIncidencias();
-
+        revisarNotificaciones();
         const intervalo = window.setInterval(
-            revisarIncidencias,
-            Math.max(10, configuracion.refrescoTv) * 1000
+            revisarNotificaciones,
+            Math.max(15, configuracion.refrescoTv) * 1000
         );
 
         return () => window.clearInterval(intervalo);
-    }, [configuracion.refrescoTv, revisarIncidencias]);
+    }, [configuracion.refrescoTv, revisarNotificaciones]);
 
-    const avisosVisibles = useMemo(
-        () =>
-            configuracion.notificacionesPantalla ||
-            configuracion.resumenDiario
-                ? avisos
-                : [],
-        [
-            avisos,
-            configuracion.notificacionesPantalla,
-            configuracion.resumenDiario
-        ]
+    useEffect(
+        () => () => {
+            temporizadoresRef.current.forEach(window.clearTimeout);
+            temporizadoresRef.current.clear();
+        },
+        []
     );
 
-    if (avisosVisibles.length === 0) {
-        return null;
-    }
+    if (avisos.length === 0) return null;
 
     return (
         <div className="fixed right-4 top-24 z-50 w-[min(360px,calc(100vw-2rem))] space-y-3">
-            {avisosVisibles.map((aviso) => {
-                const esCritica = aviso.tipo === 'critica';
-                const esResumen = aviso.tipo === 'resumen';
-                const Icono = esResumen
-                    ? BarChart3
-                    : esCritica
-                        ? AlertTriangle
-                        : Bell;
+            {avisos.map((aviso) => {
+                const esCritica = aviso.titulo
+                    .toLowerCase()
+                    .includes('crítica');
+                const Icono = esCritica ? AlertTriangle : Bell;
 
                 return (
                     <article
                         key={aviso.id}
                         className={[
                             'rounded-2xl border bg-white p-4 shadow-2xl shadow-slate-950/10',
-                            esCritica
-                                ? 'border-red-200'
-                                : esResumen
-                                    ? 'border-blue-200'
-                                    : 'border-emerald-200'
+                            esCritica ? 'border-red-200' : 'border-emerald-200'
                         ].join(' ')}
                     >
                         <div className="flex items-start gap-3">
-                            <div
-                                className={[
-                                    'grid h-10 w-10 shrink-0 place-items-center rounded-xl',
-                                    esCritica
-                                        ? 'bg-red-50 text-red-700'
-                                        : esResumen
-                                            ? 'bg-blue-50 text-blue-700'
-                                            : 'bg-emerald-50 text-emerald-700'
-                                ].join(' ')}
-                            >
+                            <div className={[
+                                'grid h-10 w-10 shrink-0 place-items-center rounded-xl',
+                                esCritica
+                                    ? 'bg-red-50 text-red-700'
+                                    : 'bg-emerald-50 text-emerald-700'
+                            ].join(' ')}>
                                 <Icono size={19} />
                             </div>
-
                             <div className="min-w-0 flex-1">
                                 <p className="font-bold text-slate-950">
                                     {aviso.titulo}
                                 </p>
-
                                 <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">
                                     {aviso.mensaje}
                                 </p>
                             </div>
-
                             <button
                                 type="button"
                                 aria-label="Cerrar aviso"
-                                onClick={() =>
-                                    setAvisos((actual) =>
-                                        actual.filter(
-                                            (item) =>
-                                                item.id !== aviso.id
-                                        )
-                                    )
-                                }
+                                onClick={() => setAvisos((actual) =>
+                                    actual.filter((item) => item.id !== aviso.id)
+                                )}
                                 className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                             >
                                 <X size={16} />

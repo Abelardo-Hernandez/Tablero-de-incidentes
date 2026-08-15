@@ -1,4 +1,5 @@
 import {
+    useEffect,
     useState
 } from 'react';
 
@@ -11,6 +12,12 @@ import Sidebar from '../components/layout/Sidebar';
 import SystemNotifications from '../components/ui/SystemNotifications';
 
 import useAuth from '../hooks/useAuth';
+import {
+    obtenerConfiguracionGeneral
+} from '../services/configuracion.service';
+import {
+    guardarConfiguracion
+} from '../utils/configuracion';
 
 function MainLayout() {
     const { usuario } = useAuth();
@@ -20,6 +27,22 @@ function MainLayout() {
 
     const [menuMovilAbierto, setMenuMovilAbierto] =
         useState(false);
+
+    useEffect(() => {
+        async function cargarConfiguracionServidor() {
+            try {
+                const respuesta = await obtenerConfiguracionGeneral();
+                guardarConfiguracion(respuesta.data || {});
+            } catch (error) {
+                console.error(
+                    'No fue posible cargar la configuracion general:',
+                    error
+                );
+            }
+        }
+
+        cargarConfiguracionServidor();
+    }, []);
 
     return (
         <div className="flex h-dvh overflow-hidden bg-[#f4f7fa]">

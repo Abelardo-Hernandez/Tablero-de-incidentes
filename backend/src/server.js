@@ -5,6 +5,15 @@ const db = require('./config/db');
 const {
     iniciarProgramadorEnvioDiario
 } = require('./services/envio-diario.scheduler');
+const {
+    asegurarTablaPush
+} = require('./services/push.service');
+const {
+    asegurarConfiguracionGeneral
+} = require('./controllers/configuracion.controller');
+const {
+    sincronizarVideos
+} = require('./routes/videos.routes');
 
 const PORT = process.env.PORT || 3010;
 
@@ -15,6 +24,18 @@ async function iniciarServidor() {
         console.log('✅ Conexión a MySQL exitosa');
 
         connection.release();
+
+        await asegurarTablaPush();
+        await asegurarConfiguracionGeneral();
+
+        try {
+            await sincronizarVideos();
+        } catch (errorVideos) {
+            console.warn(
+                'No fue posible sincronizar la carpeta de videos al iniciar:',
+                errorVideos.message
+            );
+        }
 
         app.listen(PORT, () => {
             iniciarProgramadorEnvioDiario();

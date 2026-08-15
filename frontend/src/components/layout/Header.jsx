@@ -21,10 +21,9 @@ import {
 import useAuth from '../../hooks/useAuth';
 
 import {
-    eliminarNotificacion,
-    EVENTO_NOTIFICACIONES,
-    obtenerNotificaciones
-} from '../../utils/notificaciones';
+    marcarNotificacionLeida,
+    obtenerNotificacionesServidor
+} from '../../services/notificaciones.service';
 
 const nombresRutas = {
     '/': {
@@ -96,9 +95,7 @@ function Header({
         notificacionesAbiertas,
         setNotificacionesAbiertas
     ] = useState(false);
-    const [notificaciones, setNotificaciones] = useState(() =>
-        obtenerNotificaciones(usuario?.unidad_negocio_id)
-    );
+    const [notificaciones, setNotificaciones] = useState([]);
 
     const menuRef = useRef(null);
     const notificacionesRef = useRef(null);
@@ -146,64 +143,40 @@ function Header({
     }, []);
 
     useEffect(() => {
-        function actualizarNotificaciones(evento) {
-            const detalle = evento.detail;
-
-            if (
-                detalle?.unidadNegocioId &&
-                Number(detalle.unidadNegocioId) !==
-                    Number(usuario?.unidad_negocio_id)
-            ) {
-                return;
+        async function actualizarNotificaciones() {
+            try {
+                const respuesta = await obtenerNotificacionesServidor();
+                setNotificaciones(respuesta.data || []);
+            } catch (error) {
+                console.error('No fue posible cargar notificaciones:', error);
             }
-
-            setNotificaciones(
-                detalle?.notificaciones ||
-                    obtenerNotificaciones(
-                        usuario?.unidad_negocio_id
-                    )
-            );
         }
 
-        window.addEventListener(
-            EVENTO_NOTIFICACIONES,
-            actualizarNotificaciones
-        );
-
-        window.addEventListener(
-            'storage',
-            actualizarNotificaciones
+        actualizarNotificaciones();
+        const intervalo = window.setInterval(
+            actualizarNotificaciones,
+            15000
         );
 
         return () => {
-            window.removeEventListener(
-                EVENTO_NOTIFICACIONES,
-                actualizarNotificaciones
-            );
-
-            window.removeEventListener(
-                'storage',
-                actualizarNotificaciones
-            );
+            window.clearInterval(intervalo);
         };
-    }, [usuario?.unidad_negocio_id]);
-
-    useEffect(() => {
-        setNotificaciones(
-            obtenerNotificaciones(usuario?.unidad_negocio_id)
-        );
-    }, [usuario?.unidad_negocio_id]);
+    }, [usuario?.id]);
 
     function salir() {
         cerrarSesion();
         navigate('/login', { replace: true });
     }
 
-    function quitarNotificacion(id) {
-        eliminarNotificacion(id, usuario?.unidad_negocio_id);
-        setNotificaciones(
-            obtenerNotificaciones(usuario?.unidad_negocio_id)
-        );
+    async function quitarNotificacion(id) {
+        try {
+            await marcarNotificacionLeida(id);
+            setNotificaciones((actual) =>
+                actual.filter((item) => item.id !== id)
+            );
+        } catch (error) {
+            console.error('No fue posible cerrar la notificación:', error);
+        }
     }
 
     const iniciales = usuario?.nombre

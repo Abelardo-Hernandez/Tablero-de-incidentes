@@ -79,6 +79,13 @@ function IncidenciaModal({
                 Number(usuario?.unidad_negocio_id)
         );
 
+        const lineaUsuarioValida = lineas.some(
+            (linea) =>
+                Number(linea.id) === Number(usuario?.linea_id) &&
+                Number(linea.unidad_negocio_id) ===
+                    Number(usuario?.unidad_negocio_id)
+        );
+
         setFormulario({
             ...formularioInicial,
             tipo: tipoInicial,
@@ -88,6 +95,9 @@ function IncidenciaModal({
             unidad_negocio_id:
                 usuario?.unidad_negocio_id || '',
             area_origen_id: usuario?.area_id || '',
+            linea_id: lineaUsuarioValida
+                ? usuario.linea_id
+                : '',
             turno_id:
                 turnosUnidadUsuario.length === 1
                     ? turnosUnidadUsuario[0].id
@@ -97,7 +107,9 @@ function IncidenciaModal({
     }, [
         abierto,
         usuario?.area_id,
+        usuario?.linea_id,
         usuario?.unidad_negocio_id,
+        lineas,
         turnos,
         tiposFalla
     ]);

@@ -3,7 +3,9 @@ const express = require('express');
 const {
     enviarResumenDiarioPrueba,
     guardarConfigEnvioDiario,
-    obtenerConfigEnvioDiario
+    guardarConfiguracionGeneral,
+    obtenerConfigEnvioDiario,
+    obtenerConfiguracionGeneral
 } = require('../controllers/configuracion.controller');
 
 const {
@@ -14,8 +16,12 @@ const {
 const router = express.Router();
 
 router.use(verificarToken);
+
+router.get('/general', obtenerConfiguracionGeneral);
+
 router.use(soloAdministrador);
 
+router.put('/general', guardarConfiguracionGeneral);
 router.get('/envio-diario', obtenerConfigEnvioDiario);
 router.put('/envio-diario', guardarConfigEnvioDiario);
 router.post('/envio-diario/enviar-prueba', enviarResumenDiarioPrueba);

@@ -58,6 +58,7 @@ function TvPage() {
     const tvRef = useRef(null);
     const idsVistosRef = useRef(new Set());
     const primeraCargaRef = useRef(true);
+    const temporizadoresAlertaRef = useRef(new Set());
 
     const [incidencias, setIncidencias] = useState([]);
     const [incidenciasNuevas, setIncidenciasNuevas] =
@@ -106,10 +107,32 @@ function TvPage() {
     }, []);
 
     useEffect(() => {
+        let cancelado = false;
+        let temporizadorConsulta;
+        let solicitudEnCurso = false;
+
         async function cargarIncidencias() {
+            if (
+                cancelado ||
+                solicitudEnCurso ||
+                document.visibilityState === 'hidden'
+            ) {
+                return;
+            }
+
+            solicitudEnCurso = true;
+
             try {
                 const respuesta =
-                    await obtenerIncidencias();
+                    await obtenerIncidencias({
+                        vista_tv: true,
+                        incluir_cerradas_tv:
+                            configuracion.mostrarCerradasTv
+                    });
+
+                if (cancelado) {
+                    return;
+                }
 
                 const nuevasIncidencias =
                     respuesta.data || [];
@@ -146,7 +169,7 @@ function TvPage() {
                                 ])
                         );
 
-                        window.setTimeout(() => {
+                        const temporizadorAlerta = window.setTimeout(() => {
                             setIncidenciasNuevas(
                                 (actual) => {
                                     const siguiente =
@@ -159,7 +182,14 @@ function TvPage() {
                                     return siguiente;
                                 }
                             );
+                            temporizadoresAlertaRef.current.delete(
+                                temporizadorAlerta
+                            );
                         }, 9000);
+
+                        temporizadoresAlertaRef.current.add(
+                            temporizadorAlerta
+                        );
                     }
 
                     idsVistosRef.current = idsActivos;
@@ -167,20 +197,52 @@ function TvPage() {
 
                 setIncidencias(nuevasIncidencias);
             } catch (error) {
-                console.error(
-                    'Error al cargar vista TV:',
-                    error
+                if (!cancelado) {
+                    console.error(
+                        'Error al cargar vista TV:',
+                        error
+                    );
+                }
+            } finally {
+                solicitudEnCurso = false;
+            }
+        }
+
+        async function actualizarYProgramar() {
+            await cargarIncidencias();
+
+            if (!cancelado) {
+                temporizadorConsulta = window.setTimeout(
+                    actualizarYProgramar,
+                    Math.max(10, configuracion.refrescoTv) * 1000
                 );
             }
         }
 
-        cargarIncidencias();
+        function actualizarAlRegresar() {
+            if (
+                document.visibilityState === 'visible' &&
+                !solicitudEnCurso
+            ) {
+                window.clearTimeout(temporizadorConsulta);
+                actualizarYProgramar();
+            }
+        }
 
-        const intervalo = window.setInterval(() => {
-            cargarIncidencias();
-        }, Math.max(10, configuracion.refrescoTv) * 1000);
+        actualizarYProgramar();
+        document.addEventListener(
+            'visibilitychange',
+            actualizarAlRegresar
+        );
 
-        return () => window.clearInterval(intervalo);
+        return () => {
+            cancelado = true;
+            window.clearTimeout(temporizadorConsulta);
+            document.removeEventListener(
+                'visibilitychange',
+                actualizarAlRegresar
+            );
+        };
     }, [
         configuracion.mostrarCerradasTv,
         configuracion.refrescoTv
@@ -190,10 +252,20 @@ function TvPage() {
         const intervalo = window.setInterval(() => {
             setHora(new Date());
             setTick((actual) => actual + 1);
-        }, 1000);
+        }, 5000);
 
         return () => window.clearInterval(intervalo);
     }, []);
+
+    useEffect(
+        () => () => {
+            temporizadoresAlertaRef.current.forEach((temporizador) => {
+                window.clearTimeout(temporizador);
+            });
+            temporizadoresAlertaRef.current.clear();
+        },
+        []
+    );
 
     useEffect(() => {
         async function cargarVideos() {
@@ -206,9 +278,23 @@ function TvPage() {
                     .filter(Boolean);
 
                 if (rutas.length > 0) {
-                    setVideos(rutas);
-                    setVideoActual(0);
+                    setVideos((actuales) => {
+                        const sinCambios =
+                            actuales.length === rutas.length &&
+                            actuales.every(
+                                (ruta, indice) => ruta === rutas[indice]
+                            );
+
+                        if (sinCambios) return actuales;
+
+                        setVideoActual(0);
+                        return rutas;
+                    });
                     setVideoDisponible(true);
+                } else {
+                    setVideos([]);
+                    setVideoActual(0);
+                    setVideoDisponible(false);
                 }
             } catch (error) {
                 console.error(
@@ -219,6 +305,13 @@ function TvPage() {
         }
 
         cargarVideos();
+
+        const intervaloVideos = window.setInterval(
+            cargarVideos,
+            30000
+        );
+
+        return () => window.clearInterval(intervaloVideos);
     }, []);
 
     useEffect(() => {
@@ -531,9 +624,9 @@ function IncidenciaFila({
                                         : 'text-emerald-300'
                         ].join(' ')}
                     >
-                        {textoAlerta && `${textoAlerta} · `}
                         {incidencia.linea_nombre ||
                             'Sin línea asignada'}
+                        {textoAlerta && ` · ${textoAlerta}`}
                     </p>
 
                     <p className="mt-1 truncate text-lg font-bold">

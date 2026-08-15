@@ -13,6 +13,10 @@ const {
     notificarNuevaIncidencia
 } = require('../services/push.service');
 
+const {
+    crearNotificacionIncidencia
+} = require('../services/notificaciones.service');
+
 const ESTADOS = [
     'nueva',
     'asignada',
@@ -373,15 +377,32 @@ async function obtenerIncidencias(req, res) {
             area_id,
             linea_id,
             responsable_usuario_id,
-            buscar
+            buscar,
+            vista_tv,
+            incluir_cerradas_tv,
+            unidad_negocio_id
         } = req.query;
 
-        const condiciones = [
-            'i.unidad_negocio_id = ?'
-        ];
-        const valores = [
-            req.user.unidad_negocio_id
-        ];
+        const condiciones = [];
+        const valores = [];
+
+        if (req.user.rol === 'super_admin') {
+            if (unidad_negocio_id) {
+                condiciones.push('i.unidad_negocio_id = ?');
+                valores.push(Number(unidad_negocio_id));
+            }
+        } else {
+            condiciones.push('i.unidad_negocio_id = ?');
+            valores.push(req.user.unidad_negocio_id);
+        }
+
+        if (vista_tv === 'true') {
+            condiciones.push(
+                incluir_cerradas_tv === 'true'
+                    ? "i.estado IN ('nueva', 'asignada', 'en_proceso', 'resuelta', 'cerrada')"
+                    : "i.estado IN ('nueva', 'asignada', 'en_proceso')"
+            );
+        }
 
         if (estado) {
             condiciones.push('i.estado = ?');
@@ -511,13 +532,13 @@ async function obtenerIncidencias(req, res) {
 
 async function obtenerResponsables(req, res) {
     try {
-        const condiciones = [
-            'u.activo = 1',
-            'u.unidad_negocio_id = ?'
-        ];
-        const valores = [
-            req.user.unidad_negocio_id
-        ];
+        const condiciones = ['u.activo = 1'];
+        const valores = [];
+
+        if (req.user.rol !== 'super_admin') {
+            condiciones.push('u.unidad_negocio_id = ?');
+            valores.push(req.user.unidad_negocio_id);
+        }
 
         if (!esAdministrador(req.user)) {
             if (!req.user.area_id) {
@@ -615,12 +636,16 @@ async function obtenerIncidenciaPorId(req, res) {
                 ON tf.clave = i.tipo
                AND tf.unidad_negocio_id = i.unidad_negocio_id
             WHERE i.id = ?
-              AND i.unidad_negocio_id = ?
+              AND (
+                  i.unidad_negocio_id = ?
+                  OR ? = 'super_admin'
+              )
             LIMIT 1
             `,
             [
                 id,
-                req.user.unidad_negocio_id
+                req.user.unidad_negocio_id,
+                req.user.rol
             ]
         );
 
@@ -863,6 +888,33 @@ async function crearIncidencia(req, res) {
 
         const id = resultado.insertId;
 
+        let lineaNombre = '';
+        if (linea_id) {
+            const [lineas] = await db.query(
+                'SELECT nombre FROM lineas WHERE id = ? LIMIT 1',
+                [linea_id]
+            );
+            lineaNombre = lineas[0]?.nombre || '';
+        }
+
+        crearNotificacionIncidencia({
+            incidenciaId: id,
+            areaId: areaResponsableId,
+            unidadNegocioId: unidadObjetivoId,
+            tipo: 'nueva_incidencia',
+            titulo: prioridadFinal === 'critica'
+                ? 'Nueva incidencia crítica'
+                : 'Nueva incidencia',
+            mensaje: lineaNombre
+                ? `Línea: ${lineaNombre} · ${titulo.trim()}`
+                : titulo.trim()
+        }).catch((error) => {
+            console.warn(
+                'No fue posible guardar la notificacion en MySQL:',
+                error.message
+            );
+        });
+
         await registrarHistorial({
             incidenciaId: id,
             usuarioId: req.user.id,
@@ -891,7 +943,8 @@ async function crearIncidencia(req, res) {
             titulo: titulo.trim(),
             prioridad: prioridadFinal,
             areaResponsableId,
-            unidadNegocioId: unidadObjetivoId
+            unidadNegocioId: unidadObjetivoId,
+            lineaId: linea_id || null
         }).catch((error) => {
             console.warn(
                 'No fue posible iniciar notificaciÃ³n push:',

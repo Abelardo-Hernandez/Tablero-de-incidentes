@@ -1,6 +1,3 @@
-export const CLAVE_CONFIGURACION =
-    'tablero_incidentes_configuracion';
-
 export const EVENTO_CONFIGURACION =
     'tablero-incidentes-configuracion';
 
@@ -15,7 +12,8 @@ export const configuracionInicial = {
     mostrarCerradasTv: false,
     notificacionesPantalla: true,
     sonidoAlertas: false,
-    resumenDiario: true
+    resumenDiario: true,
+    rutaVideos: ''
 };
 
 export const prioridadesConfiguracion = {
@@ -32,23 +30,10 @@ export const zonasHorariasConfiguracion = {
     UTC: 'UTC'
 };
 
+let configuracionActual = configuracionInicial;
+
 export function cargarConfiguracion() {
-    try {
-        const guardada = localStorage.getItem(
-            CLAVE_CONFIGURACION
-        );
-
-        if (!guardada) {
-            return configuracionInicial;
-        }
-
-        return {
-            ...configuracionInicial,
-            ...JSON.parse(guardada)
-        };
-    } catch {
-        return configuracionInicial;
-    }
+    return configuracionActual;
 }
 
 export function guardarConfiguracion(datos) {
@@ -57,10 +42,7 @@ export function guardarConfiguracion(datos) {
         ...datos
     };
 
-    localStorage.setItem(
-        CLAVE_CONFIGURACION,
-        JSON.stringify(siguiente)
-    );
+    configuracionActual = siguiente;
 
     window.dispatchEvent(
         new CustomEvent(EVENTO_CONFIGURACION, {

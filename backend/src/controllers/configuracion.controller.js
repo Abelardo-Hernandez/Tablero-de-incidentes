@@ -1,4 +1,6 @@
 const db = require('../config/db');
+const fs = require('fs/promises');
+const path = require('path');
 
 const {
     enviarResumenDiario,
@@ -15,6 +17,148 @@ function horaValida(hora) {
 
 function esSuperAdmin(req) {
     return req.user?.rol === 'super_admin';
+}
+
+const CONFIGURACION_GENERAL = {
+    nombreSistema: ['nombre_sistema', 'texto'],
+    empresa: ['nombre_empresa', 'texto'],
+    zonaHoraria: ['zona_horaria', 'texto'],
+    prioridadDefault: ['prioridad_default', 'texto'],
+    tiempoPrimeraRespuesta: ['tiempo_primera_respuesta', 'numero'],
+    tiempoResolucion: ['tiempo_resolucion', 'numero'],
+    refrescoTv: ['actualizacion_tablero_segundos', 'numero'],
+    mostrarCerradasTv: ['mostrar_cerradas_tv', 'booleano'],
+    notificacionesPantalla: ['notificaciones_pantalla', 'booleano'],
+    sonidoAlertas: ['sonido_alertas', 'booleano'],
+    resumenDiario: ['resumen_diario', 'booleano'],
+    rutaVideos: ['ruta_videos', 'texto']
+};
+
+const VALORES_CONFIGURACION_GENERAL = {
+    nombreSistema: 'Centro de incidencias',
+    empresa: 'Confecciones Punto Textil',
+    zonaHoraria: 'America/Mexico_City',
+    prioridadDefault: 'media',
+    tiempoPrimeraRespuesta: 15,
+    tiempoResolucion: 120,
+    refrescoTv: 30,
+    mostrarCerradasTv: false,
+    notificacionesPantalla: true,
+    sonidoAlertas: false,
+    resumenDiario: true,
+    rutaVideos: ''
+};
+
+async function asegurarConfiguracionGeneral() {
+    await Promise.all(
+        Object.entries(CONFIGURACION_GENERAL).map(
+            ([campo, [clave, tipo]]) => db.query(
+                `
+                INSERT INTO configuracion (
+                    clave, valor, tipo, categoria, editable
+                )
+                VALUES (?, ?, ?, 'sistema', 1)
+                ON DUPLICATE KEY UPDATE clave = clave
+                `,
+                [clave, String(VALORES_CONFIGURACION_GENERAL[campo]), tipo]
+            )
+        )
+    );
+}
+
+function convertirValorConfiguracion(valor, tipo) {
+    if (tipo === 'numero') return Number(valor);
+    if (tipo === 'booleano') return valor === 'true' || valor === '1';
+    return valor;
+}
+
+async function obtenerConfiguracionGeneral(req, res) {
+    try {
+        await asegurarConfiguracionGeneral();
+        const claves = Object.values(CONFIGURACION_GENERAL).map(
+            ([clave]) => clave
+        );
+        const [filas] = await db.query(
+            'SELECT clave, valor, tipo FROM configuracion WHERE clave IN (?)',
+            [claves]
+        );
+        const porClave = new Map(filas.map((fila) => [fila.clave, fila]));
+        const data = {};
+
+        Object.entries(CONFIGURACION_GENERAL).forEach(
+            ([campo, [clave, tipo]]) => {
+                const fila = porClave.get(clave);
+                if (fila) {
+                    data[campo] = convertirValorConfiguracion(
+                        fila.valor,
+                        tipo
+                    );
+                }
+            }
+        );
+
+        return res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error al obtener configuracion general:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'No fue posible obtener la configuracion general'
+        });
+    }
+}
+
+async function guardarConfiguracionGeneral(req, res) {
+    const connection = await db.getConnection();
+
+    try {
+        if (req.body.rutaVideos) {
+            const rutaVideos = path.resolve(req.body.rutaVideos);
+            const estado = await fs.stat(rutaVideos).catch(() => null);
+
+            if (!estado?.isDirectory()) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'La carpeta de videos no existe en el servidor'
+                });
+            }
+
+            req.body.rutaVideos = rutaVideos;
+        }
+
+        await connection.beginTransaction();
+
+        for (const [campo, [clave, tipo]] of Object.entries(CONFIGURACION_GENERAL)) {
+            if (req.body[campo] === undefined) continue;
+
+            const valor = String(req.body[campo]);
+            await connection.query(
+                `
+                INSERT INTO configuracion (clave, valor, tipo, categoria, editable)
+                VALUES (?, ?, ?, 'sistema', 1)
+                ON DUPLICATE KEY UPDATE
+                    valor = VALUES(valor),
+                    tipo = VALUES(tipo),
+                    fecha_actualizacion = CURRENT_TIMESTAMP
+                `,
+                [clave, valor, tipo]
+            );
+        }
+
+        await connection.commit();
+        return res.json({
+            success: true,
+            message: 'Configuracion general guardada'
+        });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Error al guardar configuracion general:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'No fue posible guardar la configuracion general'
+        });
+    } finally {
+        connection.release();
+    }
 }
 
 async function asegurarConfiguracion(unidadNegocioId) {
@@ -283,7 +427,10 @@ async function enviarResumenDiarioPrueba(req, res) {
 }
 
 module.exports = {
+    asegurarConfiguracionGeneral,
     enviarResumenDiarioPrueba,
     guardarConfigEnvioDiario,
-    obtenerConfigEnvioDiario
+    guardarConfiguracionGeneral,
+    obtenerConfigEnvioDiario,
+    obtenerConfiguracionGeneral
 };

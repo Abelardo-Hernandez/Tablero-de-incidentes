@@ -7,6 +7,41 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT =
     process.env.VAPID_SUBJECT || 'mailto:admin@localhost';
 
+let tablaPushAsegurada = false;
+
+async function asegurarTablaPush() {
+    if (tablaPushAsegurada) return;
+
+    await db.query(
+        `
+        CREATE TABLE IF NOT EXISTS push_suscripciones (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            usuario_id INT NOT NULL,
+            unidad_negocio_id INT NOT NULL,
+            area_id INT NULL,
+            endpoint VARCHAR(500) NOT NULL,
+            p256dh VARCHAR(255) NOT NULL,
+            auth VARCHAR(255) NOT NULL,
+            user_agent VARCHAR(500) NULL,
+            activo TINYINT(1) NOT NULL DEFAULT 1,
+            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_push_endpoint (endpoint),
+            KEY idx_push_usuario (usuario_id),
+            KEY idx_push_unidad_area (unidad_negocio_id, area_id, activo),
+            CONSTRAINT fk_push_usuario FOREIGN KEY (usuario_id)
+                REFERENCES usuarios(id) ON DELETE CASCADE,
+            CONSTRAINT fk_push_unidad FOREIGN KEY (unidad_negocio_id)
+                REFERENCES unidades_negocio(id),
+            CONSTRAINT fk_push_area FOREIGN KEY (area_id)
+                REFERENCES areas(id) ON DELETE SET NULL
+        )
+        `
+    );
+
+    tablaPushAsegurada = true;
+}
+
 function pushConfigurado() {
     return Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 }
@@ -32,6 +67,7 @@ async function guardarSuscripcion({
     suscripcion,
     userAgent
 }) {
+    await asegurarTablaPush();
     if (
         !suscripcion?.endpoint ||
         !suscripcion?.keys?.p256dh ||
@@ -81,6 +117,7 @@ async function eliminarSuscripcion({
     usuarioId,
     endpoint
 }) {
+    await asegurarTablaPush();
     if (!endpoint) {
         return;
     }
@@ -101,6 +138,7 @@ async function eliminarSuscripcion({
 }
 
 async function desactivarSuscripcion(endpoint) {
+    await asegurarTablaPush();
     await db.query(
         `
         UPDATE push_suscripciones
@@ -117,11 +155,14 @@ async function notificarNuevaIncidencia({
     titulo,
     prioridad,
     areaResponsableId,
-    unidadNegocioId
+    unidadNegocioId,
+    lineaId = null
 }) {
     if (!pushConfigurado()) {
         return;
     }
+
+    await asegurarTablaPush();
 
     configurarPush();
 
@@ -152,10 +193,29 @@ async function notificarNuevaIncidencia({
         return;
     }
 
+    let lineaNombre = '';
+
+    if (lineaId) {
+        const [lineas] = await db.query(
+            `
+            SELECT nombre
+            FROM lineas
+            WHERE id = ?
+              AND unidad_negocio_id = ?
+            LIMIT 1
+            `,
+            [lineaId, unidadNegocioId]
+        );
+
+        lineaNombre = lineas[0]?.nombre || '';
+    }
+
     const folio = `INC-${String(incidenciaId).padStart(6, '0')}`;
     const payload = JSON.stringify({
         title: `${folio} - Nueva incidencia`,
-        body: titulo,
+        body: lineaNombre
+            ? `Línea: ${lineaNombre} · ${titulo}`
+            : titulo,
         url: '/incidencias',
         prioridad
     });
@@ -193,6 +253,7 @@ async function notificarNuevaIncidencia({
 }
 
 module.exports = {
+    asegurarTablaPush,
     eliminarSuscripcion,
     guardarSuscripcion,
     notificarNuevaIncidencia,

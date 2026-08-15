@@ -123,9 +123,11 @@ function IncidenciasPage() {
         linea_id: ''
     });
 
-    const cargarIncidencias = useCallback(async () => {
+    const cargarIncidencias = useCallback(async (silencioso = false) => {
         try {
-            setCargando(true);
+            if (!silencioso) {
+                setCargando(true);
+            }
             setError('');
 
             const respuesta = await obtenerIncidencias({
@@ -148,7 +150,9 @@ function IncidenciasPage() {
                 'No fue posible cargar las incidencias.'
             );
         } finally {
-            setCargando(false);
+            if (!silencioso) {
+                setCargando(false);
+            }
         }
     }, [filtros]);
 
@@ -158,6 +162,31 @@ function IncidenciasPage() {
         }, 300);
 
         return () => clearTimeout(temporizador);
+    }, [cargarIncidencias]);
+
+    useEffect(() => {
+        const intervalo = window.setInterval(() => {
+            cargarIncidencias(true);
+        }, 15000);
+
+        function actualizarAlRegresar() {
+            if (document.visibilityState === 'visible') {
+                cargarIncidencias(true);
+            }
+        }
+
+        document.addEventListener(
+            'visibilitychange',
+            actualizarAlRegresar
+        );
+
+        return () => {
+            window.clearInterval(intervalo);
+            document.removeEventListener(
+                'visibilitychange',
+                actualizarAlRegresar
+            );
+        };
     }, [cargarIncidencias]);
 
     useEffect(() => {

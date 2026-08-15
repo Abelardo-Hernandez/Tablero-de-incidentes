@@ -26,7 +26,8 @@ import {
     obtenerAreasActivas,
     obtenerLineasActivas,
     obtenerTiposFallaActivos,
-    obtenerTurnosActivos
+    obtenerTurnosActivos,
+    obtenerUnidadesNegocio
 } from '../../services/catalogos.service';
 
 import {
@@ -74,6 +75,7 @@ const tiposBase = {
 };
 
 const filtrosIniciales = {
+    unidad_negocio_id: '',
     fecha_inicial: '',
     fecha_final: '',
     area_id: '',
@@ -245,6 +247,7 @@ function ReportesPage() {
 
     const esAdministrador =
         ['administrador', 'super_admin'].includes(usuario?.rol);
+    const esSuperAdmin = usuario?.rol === 'super_admin';
 
     const [incidencias, setIncidencias] = useState([]);
     const [areas, setAreas] = useState([]);
@@ -252,6 +255,7 @@ function ReportesPage() {
     const [turnos, setTurnos] = useState([]);
     const [tiposFalla, setTiposFalla] = useState([]);
     const [usuarios, setUsuarios] = useState([]);
+    const [unidades, setUnidades] = useState([]);
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState('');
     const [orden, setOrden] = useState({
@@ -266,7 +270,13 @@ function ReportesPage() {
         useState(false);
     const [errorDetalle, setErrorDetalle] = useState('');
 
-    const [filtros, setFiltros] = useState(filtrosIniciales);
+    const [filtros, setFiltros] = useState(() => ({
+        ...filtrosIniciales,
+        unidad_negocio_id:
+            usuario?.rol === 'super_admin'
+                ? usuario?.unidad_negocio_id || ''
+                : ''
+    }));
 
     const cargarDatos = useCallback(async () => {
         try {
@@ -279,14 +289,22 @@ function ReportesPage() {
                 respuestaLineas,
                 respuestaTurnos,
                 respuestaTiposFalla,
-                respuestaUsuarios
+                respuestaUsuarios,
+                respuestaUnidades
             ] = await Promise.allSettled([
-                obtenerIncidencias(),
+                obtenerIncidencias(
+                    esSuperAdmin && filtros.unidad_negocio_id
+                        ? { unidad_negocio_id: filtros.unidad_negocio_id }
+                        : {}
+                ),
                 obtenerAreasActivas(),
                 obtenerLineasActivas(),
                 obtenerTurnosActivos(),
                 obtenerTiposFallaActivos(),
-                obtenerResponsablesIncidencias()
+                obtenerResponsablesIncidencias(),
+                esSuperAdmin
+                    ? obtenerUnidadesNegocio({ activo: true })
+                    : Promise.resolve({ data: [] })
             ]);
 
             if (
@@ -320,6 +338,10 @@ function ReportesPage() {
                     respuestaUsuarios.value.data || []
                 );
             }
+
+            if (respuestaUnidades.status === 'fulfilled') {
+                setUnidades(respuestaUnidades.value.data || []);
+            }
         } catch (errorSolicitud) {
             console.error(
                 'Error al cargar reportes:',
@@ -332,7 +354,7 @@ function ReportesPage() {
         } finally {
             setCargando(false);
         }
-    }, []);
+    }, [esSuperAdmin, filtros.unidad_negocio_id]);
 
     useEffect(() => {
         cargarDatos();
@@ -351,6 +373,32 @@ function ReportesPage() {
         [tiposFalla]
     );
 
+    const unidadSeleccionada = filtros.unidad_negocio_id;
+    const filtrarPorUnidad = useCallback(
+        (lista) => !unidadSeleccionada
+            ? lista
+            : lista.filter((item) =>
+                Number(item.unidad_negocio_id) ===
+                    Number(unidadSeleccionada)
+            ),
+        [unidadSeleccionada]
+    );
+    const areasDisponibles = filtrarPorUnidad(areas);
+    const lineasDisponibles = filtrarPorUnidad(lineas);
+    const turnosDisponibles = filtrarPorUnidad(turnos);
+    const usuariosDisponibles = filtrarPorUnidad(usuarios);
+    const tiposDisponibles = useMemo(
+        () => ({
+            ...Object.fromEntries(
+                filtrarPorUnidad(tiposFalla).map((tipo) => [
+                    tipo.clave,
+                    tipo.nombre
+                ])
+            )
+        }),
+        [filtrarPorUnidad, tiposFalla]
+    );
+
     function manejarFiltro(evento) {
         const {
             name,
@@ -359,12 +407,28 @@ function ReportesPage() {
 
         setFiltros((actual) => ({
             ...actual,
-            [name]: value
+            [name]: value,
+            ...(name === 'unidad_negocio_id'
+                ? {
+                    area_id: '',
+                    linea_id: '',
+                    responsable_id: '',
+                    turno_id: '',
+                    usuario_reporta_id: '',
+                    tipo: ''
+                }
+                : {})
         }));
     }
 
     function limpiarFiltros() {
-        setFiltros(filtrosIniciales);
+        setFiltros({
+            ...filtrosIniciales,
+            unidad_negocio_id:
+                esSuperAdmin
+                    ? usuario?.unidad_negocio_id || ''
+                    : ''
+        });
         setOrden({
             campo: 'fecha_creacion',
             direccion: 'desc'
@@ -698,6 +762,13 @@ function ReportesPage() {
 
     function obtenerFiltrosAplicados() {
         const filtrosAplicados = [
+            esSuperAdmin && filtros.unidad_negocio_id && [
+                'Unidad de negocio',
+                obtenerNombreCatalogo(
+                    unidades,
+                    filtros.unidad_negocio_id
+                )
+            ],
             filtros.fecha_inicial && [
                 'Fecha inicial',
                 filtros.fecha_inicial
@@ -1114,7 +1185,14 @@ function ReportesPage() {
 
         const alcance = esLiderArea
             ? `Area: ${usuario?.area_nombre || 'Sin area'}`
-            : `Unidad: ${usuario?.unidad_negocio_nombre || 'Actual'}`;
+            : esSuperAdmin && filtros.unidad_negocio_id
+                ? `Unidad: ${obtenerNombreCatalogo(
+                    unidades,
+                    filtros.unidad_negocio_id
+                ) || 'Seleccionada'}`
+                : esSuperAdmin
+                    ? 'Todas las unidades'
+                    : `Unidad: ${usuario?.unidad_negocio_nombre || 'Actual'}`;
 
         const kpisHtml = [
             ['Reportes creados', resumen.total],
@@ -1173,11 +1251,12 @@ function ReportesPage() {
                         <td>${escaparHtml(incidencia.responsable_nombre || 'Sin responsable')}</td>
                         <td>${escaparHtml(prioridades[incidencia.prioridad] || incidencia.prioridad)}</td>
                         <td>${escaparHtml(estados[incidencia.estado] || incidencia.estado)}</td>
+                        <td>${escaparHtml(formatearMinutos(calcularTiempoEspera(incidencia)))}</td>
                         <td>${escaparHtml(formatearMinutos(calcularTiempoTotal(incidencia)))}</td>
                     </tr>
                 `)
                 .join('')
-            : '<tr><td colspan="9">Sin reportes creados hoy.</td></tr>';
+            : '<tr><td colspan="10">Sin reportes creados hoy.</td></tr>';
 
         ventana.document.write(`
             <!doctype html>
@@ -1297,6 +1376,7 @@ function ReportesPage() {
                                 <th>Responsable</th>
                                 <th>Prioridad</th>
                                 <th>Estado</th>
+                                <th>Tiempo de espera</th>
                                 <th>Tiempo total</th>
                             </tr>
                         </thead>
@@ -1377,6 +1457,16 @@ function ReportesPage() {
                     </div>
 
                     <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                        {esSuperAdmin && (
+                            <Select
+                                name="unidad_negocio_id"
+                                value={filtros.unidad_negocio_id}
+                                onChange={manejarFiltro}
+                                placeholder="Todas las unidades"
+                                opciones={unidades}
+                            />
+                        )}
+
                         <input
                             type="date"
                             name="fecha_inicial"
@@ -1398,7 +1488,7 @@ function ReportesPage() {
                             value={filtros.area_id}
                             onChange={manejarFiltro}
                             placeholder="Área que atiende"
-                            opciones={areas}
+                            opciones={areasDisponibles}
                         />
 
                         <Select
@@ -1406,7 +1496,7 @@ function ReportesPage() {
                             value={filtros.linea_id}
                             onChange={manejarFiltro}
                             placeholder="Línea"
-                            opciones={lineas}
+                            opciones={lineasDisponibles}
                         />
 
                         <Select
@@ -1414,7 +1504,7 @@ function ReportesPage() {
                             value={filtros.responsable_id}
                             onChange={manejarFiltro}
                             placeholder="Responsable"
-                            opciones={usuarios}
+                            opciones={usuariosDisponibles}
                         />
 
                         <SelectSimple
@@ -1438,7 +1528,7 @@ function ReportesPage() {
                             value={filtros.turno_id}
                             onChange={manejarFiltro}
                             placeholder="Turno"
-                            opciones={turnos}
+                            opciones={turnosDisponibles}
                         />
 
                         {esAdministrador && (
@@ -1447,7 +1537,7 @@ function ReportesPage() {
                                 value={filtros.usuario_reporta_id}
                                 onChange={manejarFiltro}
                                 placeholder="Usuario que reportó"
-                                opciones={usuarios}
+                                opciones={usuariosDisponibles}
                             />
                         )}
 
@@ -1456,7 +1546,7 @@ function ReportesPage() {
                             value={filtros.tipo}
                             onChange={manejarFiltro}
                             placeholder="Tipo"
-                            opciones={tipos}
+                            opciones={tiposDisponibles}
                         />
 
                         <div className="relative md:col-span-2 xl:col-span-5">

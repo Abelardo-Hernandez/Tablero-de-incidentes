@@ -158,6 +158,44 @@ function DashboardPage() {
     }, []);
 
     useEffect(() => {
+        async function actualizarIncidencias() {
+            try {
+                const respuesta = await obtenerIncidencias();
+                setIncidencias(respuesta.data || []);
+            } catch (errorSolicitud) {
+                console.error(
+                    'Error al actualizar dashboard:',
+                    errorSolicitud
+                );
+            }
+        }
+
+        const intervalo = window.setInterval(
+            actualizarIncidencias,
+            15000
+        );
+
+        function actualizarAlRegresar() {
+            if (document.visibilityState === 'visible') {
+                actualizarIncidencias();
+            }
+        }
+
+        document.addEventListener(
+            'visibilitychange',
+            actualizarAlRegresar
+        );
+
+        return () => {
+            window.clearInterval(intervalo);
+            document.removeEventListener(
+                'visibilitychange',
+                actualizarAlRegresar
+            );
+        };
+    }, []);
+
+    useEffect(() => {
         async function cargarPlaylist() {
             try {
                 const respuestaVideos =
@@ -170,11 +208,27 @@ function DashboardPage() {
                     .filter(Boolean);
 
                 if (rutasAutomaticas.length > 0) {
-                    setVideos(rutasAutomaticas);
-                    setVideoActual(0);
+                    setVideos((actuales) => {
+                        const sinCambios =
+                            actuales.length === rutasAutomaticas.length &&
+                            actuales.every(
+                                (ruta, indice) =>
+                                    ruta === rutasAutomaticas[indice]
+                            );
+
+                        if (sinCambios) return actuales;
+
+                        setVideoActual(0);
+                        return rutasAutomaticas;
+                    });
                     setVideoDisponible(true);
                     return;
                 }
+
+                setVideos([]);
+                setVideoActual(0);
+                setVideoDisponible(false);
+                return;
             } catch (errorVideos) {
                 console.warn(
                     'No fue posible cargar videos automáticos:',
@@ -215,6 +269,13 @@ function DashboardPage() {
         }
 
         cargarPlaylist();
+
+        const intervaloVideos = window.setInterval(
+            cargarPlaylist,
+            30000
+        );
+
+        return () => window.clearInterval(intervaloVideos);
     }, []);
 
     const datos = useMemo(() => {

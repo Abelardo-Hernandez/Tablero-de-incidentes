@@ -41,9 +41,15 @@ import {
 } from '../../services/usuarios.service';
 
 import {
+    validarRutaVideos
+} from '../../services/videos.service';
+
+import {
     enviarResumenDiarioPrueba,
+    guardarConfiguracionGeneral,
     guardarConfigEnvioDiario as guardarConfigEnvioDiarioServidor,
-    obtenerConfigEnvioDiario
+    obtenerConfigEnvioDiario,
+    obtenerConfiguracionGeneral
 } from '../../services/configuracion.service';
 
 import {
@@ -63,6 +69,8 @@ function ConfiguracionPage() {
     const [guardado, setGuardado] = useState(false);
     const [guardadoEnvio, setGuardadoEnvio] = useState(false);
     const [enviandoPrueba, setEnviandoPrueba] = useState(false);
+    const [validandoVideos, setValidandoVideos] = useState(false);
+    const [resultadoVideos, setResultadoVideos] = useState(null);
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState('');
     const [errorEnvio, setErrorEnvio] = useState('');
@@ -93,7 +101,8 @@ function ConfiguracionPage() {
                     respuestaTiposFalla,
                     respuestaUsuarios,
                     respuestaUnidades,
-                    respuestaEnvioDiario
+                    respuestaEnvioDiario,
+                    respuestaConfiguracionGeneral
                 ] = await Promise.all([
                     obtenerAreas(),
                     obtenerLineas(),
@@ -103,8 +112,17 @@ function ConfiguracionPage() {
                     esSuperAdmin
                         ? obtenerUnidadesNegocio()
                         : Promise.resolve({ data: [] }),
-                    obtenerConfigEnvioDiario()
+                    obtenerConfigEnvioDiario(),
+                    obtenerConfiguracionGeneral()
                 ]);
+
+                const configuracionServidor = {
+                    ...configuracionInicial,
+                    ...(respuestaConfiguracionGeneral.data || {})
+                };
+
+                setConfiguracion(configuracionServidor);
+                guardarConfiguracionLocal(configuracionServidor);
 
                 setCatalogos({
                     areas: respuestaAreas.data || [],
@@ -283,6 +301,8 @@ function ConfiguracionPage() {
             setErrorEnvio('');
             guardarConfiguracionLocal(configuracion);
 
+            await guardarConfiguracionGeneral(configuracion);
+
             await guardarConfigEnvioDiarioServidor(envioDiario);
 
             setGuardado(true);
@@ -297,6 +317,39 @@ function ConfiguracionPage() {
                 errorSolicitud.response?.data?.message ||
                 'No fue posible guardar el envio automatico.'
             );
+        }
+    }
+
+    async function validarCarpetaVideos() {
+        try {
+            setValidandoVideos(true);
+            setResultadoVideos(null);
+            setErrorEnvio('');
+
+            const respuesta = await validarRutaVideos(
+                configuracion.rutaVideos || ''
+            );
+            const rutaAplicada = respuesta.data?.ruta || '';
+            const siguiente = {
+                ...configuracion,
+                rutaVideos: rutaAplicada
+            };
+
+            setConfiguracion(siguiente);
+            guardarConfiguracionLocal(siguiente);
+            setResultadoVideos({
+                correcto: true,
+                mensaje: respuesta.message
+            });
+        } catch (errorSolicitud) {
+            setResultadoVideos({
+                correcto: false,
+                mensaje:
+                    errorSolicitud.response?.data?.message ||
+                    'No fue posible validar la carpeta.'
+            });
+        } finally {
+            setValidandoVideos(false);
         }
     }
 
@@ -436,6 +489,44 @@ function ConfiguracionPage() {
                             onChange={manejarCambio}
                             opciones={prioridadesConfiguracion}
                         />
+
+                        <div className="md:col-span-2">
+                            <CampoTexto
+                                label="Carpeta de videos en el servidor"
+                                name="rutaVideos"
+                                value={configuracion.rutaVideos || ''}
+                                onChange={manejarCambio}
+                                placeholder="Ejemplo: D:\\Videos\\Tablero"
+                            />
+                            <p className="mt-2 text-xs leading-5 text-slate-500">
+                                Si se deja vacía se utiliza la carpeta de videos incluida con el sistema. Se reproducen todos los archivos MP4, WebM, OGG y MOV encontrados.
+                            </p>
+
+                            <div className="mt-3 flex flex-wrap items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={validarCarpetaVideos}
+                                    disabled={validandoVideos}
+                                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60"
+                                >
+                                    <Monitor size={16} />
+                                    {validandoVideos
+                                        ? 'Revisando carpeta...'
+                                        : 'Validar y aplicar'}
+                                </button>
+
+                                {resultadoVideos && (
+                                    <p className={[
+                                        'text-sm font-semibold',
+                                        resultadoVideos.correcto
+                                            ? 'text-emerald-700'
+                                            : 'text-red-600'
+                                    ].join(' ')}>
+                                        {resultadoVideos.mensaje}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -498,7 +589,7 @@ function ConfiguracionPage() {
                             </h2>
 
                             <p className="text-sm text-slate-500">
-                                Preferencias locales para alertas y TV.
+                                Preferencias compartidas para alertas y TV.
                             </p>
                         </div>
                     </div>
@@ -657,7 +748,7 @@ function ConfiguracionPage() {
                             </h2>
 
                             <p className="text-sm text-slate-500">
-                                Los cambios se guardan en este navegador.
+                                Los cambios se guardan centralmente en MySQL.
                             </p>
                         </div>
                     </div>

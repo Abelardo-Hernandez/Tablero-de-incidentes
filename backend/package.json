@@ -7,6 +7,7 @@
         "start": "node src/server.js",
         "dev": "nodemon src/server.js",
         "crear-admin": "node scripts/crear-admin.js",
+        "respaldar-super-admin": "node scripts/respaldar-super-admin.js",
         "generar-vapid": "node scripts/generar-vapid.js"
     },
   "keywords": [],
