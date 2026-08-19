@@ -1515,6 +1515,163 @@ async function agregarComentario(req, res) {
     }
 }
 
+async function cerrarIncidenciaAdministrativamente(req, res) {
+    const connection = await db.getConnection();
+
+    try {
+        const incidenciaId = Number(req.params.id);
+        const motivo = String(req.body.motivo || '').trim();
+
+        if (!Number.isInteger(incidenciaId) || incidenciaId <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'La incidencia seleccionada no es valida'
+            });
+        }
+
+        if (motivo.length < 10) {
+            return res.status(400).json({
+                success: false,
+                message: 'El motivo debe tener al menos 10 caracteres'
+            });
+        }
+
+        if (motivo.length > 500) {
+            return res.status(400).json({
+                success: false,
+                message: 'El motivo no puede superar 500 caracteres'
+            });
+        }
+
+        const [usuarios] = await connection.query(
+            `
+            SELECT id, nombre, rol, unidad_negocio_id, activo
+            FROM usuarios
+            WHERE id = ?
+            LIMIT 1
+            `,
+            [req.user.id]
+        );
+        const administrador = usuarios[0];
+
+        if (!administrador?.activo || !esAdministrador(administrador)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Solo un administrador puede realizar un cierre administrativo'
+            });
+        }
+
+        await connection.beginTransaction();
+
+        const condiciones = ['id = ?'];
+        const valores = [incidenciaId];
+
+        if (administrador.rol !== 'super_admin') {
+            condiciones.push('unidad_negocio_id = ?');
+            valores.push(administrador.unidad_negocio_id);
+        }
+
+        const [incidencias] = await connection.query(
+            `
+            SELECT id, titulo, estado, area_origen_id,
+                   area_responsable_id, unidad_negocio_id
+            FROM incidencias
+            WHERE ${condiciones.join(' AND ')}
+            LIMIT 1
+            FOR UPDATE
+            `,
+            valores
+        );
+
+        if (incidencias.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({
+                success: false,
+                message: 'Incidencia no encontrada'
+            });
+        }
+
+        const incidencia = incidencias[0];
+
+        if (['cerrada', 'cancelada'].includes(incidencia.estado)) {
+            await connection.rollback();
+            return res.status(409).json({
+                success: false,
+                message: 'La incidencia ya se encuentra en un estado final'
+            });
+        }
+
+        await connection.query(
+            `
+            UPDATE incidencias
+            SET estado = 'cerrada',
+                fecha_cierre = NOW(),
+                observacion_cierre = ?
+            WHERE id = ?
+            `,
+            [motivo, incidenciaId]
+        );
+
+        await connection.query(
+            `
+            INSERT INTO historial_incidencias (
+                incidencia_id,
+                usuario_id,
+                accion,
+                campo_modificado,
+                valor_anterior,
+                valor_nuevo,
+                comentario
+            )
+            VALUES (?, ?, 'cierre', 'estado', ?, 'cerrada', ?)
+            `,
+            [
+                incidenciaId,
+                administrador.id,
+                incidencia.estado,
+                `Cierre administrativo: ${motivo}`
+            ]
+        );
+
+        await connection.commit();
+
+        const areas = [
+            incidencia.area_origen_id,
+            incidencia.area_responsable_id
+        ].filter((areaId, indice, lista) =>
+            areaId && lista.indexOf(areaId) === indice
+        );
+
+        await Promise.allSettled(
+            areas.map((areaId) => crearNotificacionIncidencia({
+                incidenciaId,
+                areaId,
+                unidadNegocioId: incidencia.unidad_negocio_id,
+                tipo: 'incidencia_cerrada',
+                titulo: 'Cierre administrativo',
+                mensaje: `${incidencia.titulo}: ${administrador.nombre} cerro administrativamente la incidencia. Motivo: ${motivo}`
+            }))
+        );
+
+        return res.json({
+            success: true,
+            message: 'Incidencia cerrada administrativamente'
+        });
+    } catch (error) {
+        if (connection) {
+            await connection.rollback();
+        }
+
+        console.error('Error al cerrar administrativamente:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'No fue posible cerrar administrativamente la incidencia'
+        });
+    } finally {
+        connection.release();
+    }
+}
+
 module.exports = {
     obtenerIncidencias,
     obtenerResponsables,
@@ -1522,5 +1679,6 @@ module.exports = {
     crearIncidencia,
     asignarIncidencia,
     cambiarEstadoIncidencia,
+    cerrarIncidenciaAdministrativamente,
     agregarComentario
 };

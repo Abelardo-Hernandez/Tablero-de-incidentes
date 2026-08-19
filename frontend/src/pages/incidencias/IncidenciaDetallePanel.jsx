@@ -5,6 +5,7 @@ import {
     MessageSquarePlus,
     PlayCircle,
     Send,
+    ShieldAlert,
     UserPlus,
     X,
     XCircle
@@ -20,8 +21,11 @@ import {
     agregarComentarioIncidencia,
     asignarIncidencia,
     cambiarEstadoIncidencia,
+    cerrarIncidenciaAdministrativamente,
     obtenerIncidenciaPorId
 } from '../../services/incidencias.service';
+
+import Modal from '../../components/ui/Modal';
 
 import {
     formatearFechaHora,
@@ -75,6 +79,10 @@ function IncidenciaDetallePanel({
     const [motivoCancelacion, setMotivoCancelacion] = useState('');
     const [modoCancelacion, setModoCancelacion] = useState(false);
     const [responsableId, setResponsableId] = useState('');
+    const [modalCierreAdministrativo, setModalCierreAdministrativo] = useState(false);
+    const [motivoCierreAdministrativo, setMotivoCierreAdministrativo] = useState('');
+    const [confirmacionCierreAdministrativo, setConfirmacionCierreAdministrativo] = useState(false);
+    const [errorCierreAdministrativo, setErrorCierreAdministrativo] = useState('');
 
     useEffect(() => {
         async function cargarDetalle() {
@@ -87,6 +95,10 @@ function IncidenciaDetallePanel({
                 setError('');
                 setModoCancelacion(false);
                 setMotivoCancelacion('');
+                setModalCierreAdministrativo(false);
+                setMotivoCierreAdministrativo('');
+                setConfirmacionCierreAdministrativo(false);
+                setErrorCierreAdministrativo('');
 
                 const respuesta = await obtenerIncidenciaPorId(
                     incidencia.id
@@ -140,6 +152,13 @@ function IncidenciaDetallePanel({
     }
 
     const incidenciaActual = detalle || incidencia;
+    const esAdmin = [
+        'administrador',
+        'super_admin'
+    ].includes(usuario?.rol);
+    const puedeCierreAdministrativo =
+        esAdmin &&
+        !['cerrada', 'cancelada'].includes(incidenciaActual.estado);
     const pendienteConfirmacion =
         incidenciaActual.estado === 'pendiente_confirmacion';
     const puedeAsignarResponsable =
@@ -301,6 +320,39 @@ function IncidenciaDetallePanel({
         });
         setMotivoCancelacion('');
         setModoCancelacion(false);
+    }
+
+    async function ejecutarCierreAdministrativo() {
+        if (motivoCierreAdministrativo.trim().length < 10) {
+            setErrorCierreAdministrativo('El motivo debe tener al menos 10 caracteres.');
+            return;
+        }
+
+        if (!confirmacionCierreAdministrativo) {
+            setErrorCierreAdministrativo('Confirma que revisaste la incidencia.');
+            return;
+        }
+
+        try {
+            setGuardando(true);
+            setErrorCierreAdministrativo('');
+            await cerrarIncidenciaAdministrativamente(
+                incidenciaActual.id,
+                motivoCierreAdministrativo.trim()
+            );
+            setModalCierreAdministrativo(false);
+            setMotivoCierreAdministrativo('');
+            setConfirmacionCierreAdministrativo(false);
+            setErrorCierreAdministrativo('');
+            await refrescarDetalle();
+        } catch (errorSolicitud) {
+            setErrorCierreAdministrativo(
+                errorSolicitud.response?.data?.message ||
+                'No fue posible realizar el cierre administrativo.'
+            );
+        } finally {
+            setGuardando(false);
+        }
     }
 
     async function comentar(evento) {
@@ -694,6 +746,34 @@ function IncidenciaDetallePanel({
                                         )}
                                     </div>
                                 )}
+
+                                {esAdmin && (
+                                    <div className="mt-5 border-t border-slate-200 pt-5">
+                                        <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
+                                            Administracion
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setErrorCierreAdministrativo('');
+                                                setModalCierreAdministrativo(true);
+                                            }}
+                                            disabled={
+                                                guardando ||
+                                                !puedeCierreAdministrativo
+                                            }
+                                            className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 font-bold text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                            title={
+                                                puedeCierreAdministrativo
+                                                    ? 'Finaliza excepcionalmente esta incidencia.'
+                                                    : 'La incidencia ya esta en un estado final.'
+                                            }
+                                        >
+                                            <ShieldAlert size={18} />
+                                            Cierre administrativo
+                                        </button>
+                                    </div>
+                                )}
                             </section>
 
                             <section className="rounded-3xl border border-slate-200 p-5">
@@ -806,6 +886,118 @@ function IncidenciaDetallePanel({
                     )}
                 </div>
             </aside>
+
+            <Modal
+                abierto={modalCierreAdministrativo}
+                titulo="Cerrar incidencia administrativamente"
+                descripcion="Esta accion finaliza la incidencia sin completar el flujo normal de confirmacion."
+                onCerrar={() => {
+                    if (guardando) return;
+                    setModalCierreAdministrativo(false);
+                    setMotivoCierreAdministrativo('');
+                    setConfirmacionCierreAdministrativo(false);
+                    setErrorCierreAdministrativo('');
+                }}
+                ancho="max-w-xl"
+            >
+                <div className="space-y-5 p-6">
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">
+                            {incidenciaActual.folio || `INC-${String(incidenciaActual.id).padStart(6, '0')}`}
+                        </p>
+                        <p className="mt-1 font-bold text-amber-950">
+                            {incidenciaActual.titulo}
+                        </p>
+                        <p className="mt-2 text-sm text-amber-800">
+                            Estado actual: {etiquetasEstado[incidenciaActual.estado]}
+                            {' · '}
+                            Responsable: {incidenciaActual.responsable_nombre || 'Sin responsable'}
+                        </p>
+                    </div>
+
+                    {incidenciaActual.solucion_aplicada && (
+                        <div>
+                            <p className="text-sm font-bold text-slate-800">
+                                Solucion aplicada
+                            </p>
+                            <p className="mt-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+                                {incidenciaActual.solucion_aplicada}
+                            </p>
+                        </div>
+                    )}
+
+                    {errorCierreAdministrativo && (
+                        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+                            <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                            <span>{errorCierreAdministrativo}</span>
+                        </div>
+                    )}
+
+                    <div>
+                        <label
+                            htmlFor="motivo-cierre-administrativo"
+                            className="text-sm font-bold text-slate-800"
+                        >
+                            Motivo del cierre
+                        </label>
+                        <textarea
+                            id="motivo-cierre-administrativo"
+                            value={motivoCierreAdministrativo}
+                            onChange={(evento) => setMotivoCierreAdministrativo(evento.target.value)}
+                            rows={4}
+                            maxLength={500}
+                            disabled={guardando}
+                            placeholder="Explica por que es necesario cerrar esta incidencia fuera del flujo normal."
+                            className="mt-2 w-full resize-none rounded-xl border border-slate-200 px-4 py-3 outline-none transition focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10"
+                        />
+                        <p className="mt-1 text-xs text-slate-400">
+                            Minimo 10 caracteres. Se guardara en el historial.
+                        </p>
+                    </div>
+
+                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4">
+                        <input
+                            type="checkbox"
+                            checked={confirmacionCierreAdministrativo}
+                            onChange={(evento) => setConfirmacionCierreAdministrativo(evento.target.checked)}
+                            disabled={guardando}
+                            className="mt-0.5 h-5 w-5 rounded border-slate-300 text-amber-700 focus:ring-amber-600"
+                        />
+                        <span className="text-sm font-semibold text-slate-700">
+                            Confirmo que revise esta incidencia y que requiere un cierre administrativo.
+                        </span>
+                    </label>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setModalCierreAdministrativo(false);
+                                setMotivoCierreAdministrativo('');
+                                setConfirmacionCierreAdministrativo(false);
+                                setErrorCierreAdministrativo('');
+                            }}
+                            disabled={guardando}
+                            className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 font-bold text-slate-700 disabled:opacity-60"
+                        >
+                            Volver
+                        </button>
+                        <button
+                            type="button"
+                            onClick={ejecutarCierreAdministrativo}
+                            disabled={
+                                guardando ||
+                                motivoCierreAdministrativo.trim().length < 10 ||
+                                !confirmacionCierreAdministrativo
+                            }
+                            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-amber-700 px-4 font-bold text-white transition hover:bg-amber-600 disabled:opacity-50"
+                        >
+                            <ShieldAlert size={18} />
+                            {guardando ? 'Cerrando...' : 'Cerrar incidencia'}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 }

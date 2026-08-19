@@ -209,90 +209,22 @@ function construirHtml({
         ['Reportes creados', resumen.total],
         ['Abiertos', resumen.abiertas],
         ['Resueltos/cerrados', resumen.resueltas],
-        ['Cerrados', resumen.cerradas],
-        ['Cancelados', resumen.canceladas],
-        ['Criticos', resumen.criticas],
-        ['Sin responsable', resumen.sinResponsable],
-        [
-            'Promedio atencion',
-            formatearMinutos(resumen.promedioAtencion)
-        ]
-    ];
-
-    const rankings = [
-        [
-            'Por area que atiende',
-            agruparPor(
-                incidencias,
-                (incidencia) => incidencia.area_nombre
-            )
-        ],
-        [
-            'Por linea',
-            agruparPor(
-                incidencias,
-                (incidencia) => incidencia.linea_nombre
-            )
-        ],
-        [
-            'Por prioridad',
-            agruparPor(
-                incidencias,
-                (incidencia) =>
-                    etiquetasPrioridad[incidencia.prioridad] ||
-                    incidencia.prioridad
-            )
-        ],
-        [
-            'Por estado',
-            agruparPor(
-                incidencias,
-                (incidencia) =>
-                    etiquetasEstado[incidencia.estado] ||
-                    incidencia.estado
-            )
-        ],
-        [
-            'Tipos de falla',
-            agruparPor(
-                incidencias,
-                (incidencia) =>
-                    incidencia.tipo_nombre || incidencia.tipo
-            )
-        ]
+        ['Criticos', resumen.criticas]
     ];
 
     const kpisHtml = kpis
         .map(
             ([etiqueta, valor]) => `
-                <article class="kpi">
-                    <span>${escaparHtml(etiqueta)}</span>
-                    <strong>${escaparHtml(valor)}</strong>
-                </article>
+                <tr>
+                    <td style="border-bottom: 1px solid #e2e8f0; padding: 9px 12px; text-align: left; color: #475569; font-size: 13px;">
+                        ${escaparHtml(etiqueta)}
+                    </td>
+                    <td style="border-bottom: 1px solid #e2e8f0; padding: 9px 12px; text-align: center; color: #0f172a; font-size: 14px; font-weight: bold; width: 90px;">
+                        ${escaparHtml(valor)}
+                    </td>
+                </tr>
             `
         )
-        .join('');
-
-    const rankingsHtml = rankings
-        .map(([titulo, datos]) => `
-            <section class="ranking">
-                <h2>${escaparHtml(titulo)}</h2>
-                ${
-                    datos.length
-                        ? datos
-                            .map(
-                                (item) => `
-                                    <div class="ranking-row">
-                                        <span>${escaparHtml(item.nombre)}</span>
-                                        <strong>${item.cantidad}</strong>
-                                    </div>
-                                `
-                            )
-                            .join('')
-                        : '<p class="empty">Sin datos.</p>'
-                }
-            </section>
-        `)
         .join('');
 
     const filasHtml = incidencias.length
@@ -349,40 +281,6 @@ function construirHtml({
                         margin-bottom: 18px;
                     }
 
-                    .kpis,
-                    .rankings {
-                        display: grid;
-                        gap: 10px;
-                        grid-template-columns: repeat(4, 1fr);
-                        margin-bottom: 18px;
-                    }
-
-                    .kpi,
-                    .ranking {
-                        border: 1px solid #e2e8f0;
-                        border-radius: 10px;
-                        padding: 12px;
-                    }
-
-                    .kpi span,
-                    .empty {
-                        color: #64748b;
-                        font-size: 12px;
-                    }
-
-                    .kpi strong {
-                        display: block;
-                        font-size: 20px;
-                        margin-top: 4px;
-                    }
-
-                    .ranking-row {
-                        display: flex;
-                        font-size: 13px;
-                        justify-content: space-between;
-                        padding: 5px 0;
-                    }
-
                     table {
                         border-collapse: collapse;
                         font-size: 12px;
@@ -412,8 +310,25 @@ function construirHtml({
                     &middot; Generado: ${escaparHtml(new Date().toLocaleString('es-MX'))}
                 </div>
 
-                <section class="kpis">${kpisHtml}</section>
-                <section class="rankings">${rankingsHtml}</section>
+                <table
+                    role="presentation"
+                    cellpadding="0"
+                    cellspacing="0"
+                    style="border: 1px solid #cbd5e1; border-collapse: collapse; font-family: Arial, sans-serif; width: 100%;"
+                >
+                    <thead>
+                        <tr>
+                            <th style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 9px 12px; text-align: left;">
+                                Indicador
+                            </th>
+                            <th style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1; color: #334155; font-size: 12px; padding: 9px 12px; text-align: center; width: 90px;">
+                                Total
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>${kpisHtml}</tbody>
+                </table>
+                <div style="height: 18px; line-height: 18px;">&nbsp;</div>
 
                 <table>
                     <thead>
@@ -466,9 +381,7 @@ async function generarResumenDiario({
             `Reportes creados: ${resumen.total}`,
             `Abiertos: ${resumen.abiertas}`,
             `Resueltos/cerrados: ${resumen.resueltas}`,
-            `Criticos: ${resumen.criticas}`,
-            `Sin responsable: ${resumen.sinResponsable}`,
-            `Promedio atencion: ${formatearMinutos(resumen.promedioAtencion)}`
+            `Criticos: ${resumen.criticas}`
         ].join('\n'),
         html: construirHtml({
             unidadNombre: unidad?.nombre || 'Unidad',

@@ -1081,10 +1081,12 @@ function ReportesPage() {
         });
 
         const tiemposAtencion = incidenciasDia
+            .filter((incidencia) =>
+                estadosResueltos.includes(incidencia.estado)
+            )
             .map((incidencia) =>
                 minutosEntre(
-                    incidencia.fecha_inicio_atencion ||
-                        incidencia.fecha_asignacion,
+                    incidencia.fecha_creacion,
                     incidencia.fecha_resolucion ||
                         incidencia.fecha_cierre
                 )
@@ -1108,17 +1110,8 @@ function ReportesPage() {
             resueltas: incidenciasDia.filter((incidencia) =>
                 estadosResueltos.includes(incidencia.estado)
             ).length,
-            cerradas: incidenciasDia.filter(
-                (incidencia) => incidencia.estado === 'cerrada'
-            ).length,
             canceladas: incidenciasDia.filter(
                 (incidencia) => incidencia.estado === 'cancelada'
-            ).length,
-            criticas: incidenciasDia.filter(
-                (incidencia) => incidencia.prioridad === 'critica'
-            ).length,
-            sinResponsable: incidenciasDia.filter(
-                (incidencia) => !incidencia.responsable_nombre
             ).length,
             promedioAtencion
         };
@@ -1132,7 +1125,7 @@ function ReportesPage() {
                 )
             ],
             [
-                'Por linea',
+                'Por línea',
                 agruparPor(
                     incidenciasDia,
                     (incidencia) => incidencia.linea_nombre
@@ -1199,13 +1192,10 @@ function ReportesPage() {
         const kpisHtml = [
             ['Reportes creados', resumen.total],
             ['Abiertos', resumen.abiertas],
-            ['Resueltos/cerrados', resumen.resueltas],
-            ['Cerrados', resumen.cerradas],
+            ['Resueltos/Cerrados', resumen.resueltas],
             ['Cancelados', resumen.canceladas],
-            ['Criticos', resumen.criticas],
-            ['Sin responsable', resumen.sinResponsable],
             [
-                'Promedio atencion',
+                'Tiempo promedio de solución',
                 formatearMinutos(resumen.promedioAtencion)
             ]
         ]
@@ -1248,8 +1238,8 @@ function ReportesPage() {
                         <td>${escaparHtml(incidencia.folio)}</td>
                         <td>${escaparHtml(formatearHora(incidencia.fecha_creacion))}</td>
                         <td>${escaparHtml(incidencia.titulo)}</td>
-                        <td>${escaparHtml(incidencia.linea_nombre || 'Sin linea')}</td>
-                        <td>${escaparHtml(incidencia.area_nombre || 'Sin area')}</td>
+                        <td>${escaparHtml(incidencia.linea_nombre || 'Sin línea')}</td>
+                        <td>${escaparHtml(incidencia.area_nombre || 'Sin área')}</td>
                         <td>${escaparHtml(incidencia.responsable_nombre || 'Sin responsable')}</td>
                         <td>${escaparHtml(prioridades[incidencia.prioridad] || incidencia.prioridad)}</td>
                         <td>${escaparHtml(estados[incidencia.estado] || incidencia.estado)}</td>
@@ -1294,7 +1284,7 @@ function ReportesPage() {
                         .rankings {
                             display: grid;
                             gap: 10px;
-                            grid-template-columns: repeat(4, 1fr);
+                            grid-template-columns: repeat(5, 1fr);
                             margin-bottom: 18px;
                         }
 
@@ -1364,23 +1354,19 @@ function ReportesPage() {
                         ${kpisHtml}
                     </section>
 
-                    <section class="rankings">
-                        ${rankingsHtml}
-                    </section>
-
                     <table>
                         <thead>
                             <tr>
                                 <th>Folio</th>
                                 <th>Hora</th>
-                                <th>Titulo</th>
-                                <th>Linea</th>
-                                <th>Area que atiende</th>
+                                <th>Incidente</th>
+                                <th>Línea</th>
+                                <th>Área que atiende</th>
                                 <th>Responsable</th>
                                 <th>Prioridad</th>
                                 <th>Estado</th>
                                 <th>Tiempo de espera</th>
-                                <th>Tiempo de atencion</th>
+                                <th>Tiempo de atención</th>
                                 <th>Tiempo total</th>
                             </tr>
                         </thead>

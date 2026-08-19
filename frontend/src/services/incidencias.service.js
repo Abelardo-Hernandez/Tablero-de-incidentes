@@ -67,6 +67,18 @@ export async function cambiarEstadoIncidencia(
     return respuesta.data;
 }
 
+export async function cerrarIncidenciaAdministrativamente(
+    id,
+    motivo
+) {
+    const respuesta = await api.post(
+        `/incidencias/${id}/cierre-administrativo`,
+        { motivo }
+    );
+
+    return respuesta.data;
+}
+
 export async function agregarComentarioIncidencia(
     id,
     comentario

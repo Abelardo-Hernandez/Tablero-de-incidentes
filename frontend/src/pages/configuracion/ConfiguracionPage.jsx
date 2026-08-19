@@ -639,7 +639,7 @@ function ConfiguracionPage() {
 
                         <div>
                             <h2 className="font-bold text-slate-950">
-                                Envio automatico
+                                Envío automático
                             </h2>
 
                             <p className="text-sm text-slate-500">
@@ -651,7 +651,7 @@ function ConfiguracionPage() {
                     <div className="grid gap-4 md:grid-cols-[1fr_170px]">
                         <Toggle
                             label="Enviar resumen diario"
-                            descripcion="El backend enviara el reporte una vez al dia."
+                            descripcion="Se enviará el reporte una vez al día."
                             name="activo"
                             checked={envioDiario.activo}
                             onChange={manejarCambioEnvio}
@@ -719,7 +719,7 @@ function ConfiguracionPage() {
 
                     {guardadoEnvio && (
                         <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">
-                            Envio automatico guardado.
+                            Envío automático guardado.
                         </div>
                     )}
 
@@ -748,7 +748,7 @@ function ConfiguracionPage() {
                             </h2>
 
                             <p className="text-sm text-slate-500">
-                                Los cambios se guardan centralmente en MySQL.
+                                Los cambios se guardan centralmente en la DB.
                             </p>
                         </div>
                     </div>
