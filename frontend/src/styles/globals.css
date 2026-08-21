@@ -204,6 +204,32 @@ a {
     animation: login-grid-drift 6s linear infinite;
 }
 
+/* Tipografía fluida exclusiva del panel oscuro del acceso. */
+.login-hero-title {
+    font-size: clamp(2.625rem, min(4vw, 7vh), 5rem);
+}
+
+.login-hero-brand {
+    font-size: clamp(1.25rem, min(1.55vw, 2.6vh), 1.875rem);
+}
+
+.login-hero-description {
+    font-size: clamp(1rem, min(1.2vw, 2.1vh), 1.375rem);
+    line-height: 1.65;
+}
+
+.login-hero-badge {
+    font-size: clamp(0.875rem, min(0.95vw, 1.7vh), 1.125rem);
+}
+
+.login-hero-metric {
+    font-size: clamp(1.5rem, min(1.85vw, 3.2vh), 2.375rem);
+}
+
+.login-hero-caption {
+    font-size: clamp(0.75rem, min(0.85vw, 1.55vh), 1rem);
+}
+
 @keyframes login-grid-drift {
     from {
         background-position: 0 0;

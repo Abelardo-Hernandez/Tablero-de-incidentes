@@ -207,23 +207,23 @@ function LoginPage() {
                         </div>
 
                         <div>
-                            <p className="text-xl font-bold text-white">
+                            <p className="login-hero-brand font-bold text-white">
                                 Centro de Reportes
                             </p>
 
-                            <p className="text-sm text-slate-400">
+                            <p className="login-hero-caption text-slate-400">
                                 Gestión operativa en tiempo real
                             </p>
                         </div>
                     </div>
 
                     <div className="max-w-2xl">
-                        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-300">
+                        <span className="login-hero-badge inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 font-semibold text-emerald-300">
                             <ShieldCheck size={16} />
                             Operación efectiva
                         </span>
 
-                        <h1 className="mt-6 text-4xl font-bold leading-[1.08] tracking-tight text-white xl:text-5xl">
+                        <h1 className="login-hero-title mt-6 font-bold leading-[1.08] tracking-tight text-white">
                             Respuesta 
                             <span className="text-emerald-400">
                                 {' '}
@@ -239,26 +239,26 @@ function LoginPage() {
                             </span>
                         </h1>
 
-                        <p className="mt-5 max-w-xl text-base leading-7 text-slate-400 xl:text-lg xl:leading-8">
+                        <p className="login-hero-description mt-5 max-w-xl text-slate-400">
                             Reporta, asigna y monitorea incidentes
                             en un solo lugar.
                         </p>
 
                         <div className="mt-8 grid max-w-xl grid-cols-2 gap-4">
                             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur">
-                                <p className="text-2xl font-bold text-white">
+                                <p className="login-hero-metric font-bold text-white">
                                     {resumenDiario.cargando
                                         ? '...'
                                         : resumenDiario.reportesHoy}
                                 </p>
 
-                                <p className="mt-1 text-xs text-slate-400">
+                                <p className="login-hero-caption mt-1 text-slate-400">
                                     Reportes de hoy
                                 </p>
                             </div>
 
                             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur">
-                                <p className="text-2xl font-bold text-white">
+                                <p className="login-hero-metric font-bold text-white">
                                     {resumenDiario.cargando
                                         ? '...'
                                         : formatearMinutos(
@@ -266,7 +266,7 @@ function LoginPage() {
                                         )}
                                 </p>
 
-                                <p className="mt-1 text-xs text-slate-400">
+                                <p className="login-hero-caption mt-1 text-slate-400">
                                     Tiempo promedio de atención
                                 </p>
                             </div>
@@ -275,7 +275,7 @@ function LoginPage() {
                         </div>
                     </div>
 
-                    <p className="text-sm text-slate-500">
+                    <p className="login-hero-caption text-slate-500">
                         Plataforma interna de gestión de incidencias
                     </p>
                 </section>

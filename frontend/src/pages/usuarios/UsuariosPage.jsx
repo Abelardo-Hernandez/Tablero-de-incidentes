@@ -243,7 +243,7 @@ function UsuariosPage() {
 
     return (
         <div className="mx-auto max-w-[1600px] space-y-6">
-            <div className="flex items-start gap-3">
+            <div className="flex items-center gap-3">
                 <Link
                     to="/configuracion"
                     title="Volver a configuraciÃ³n"
