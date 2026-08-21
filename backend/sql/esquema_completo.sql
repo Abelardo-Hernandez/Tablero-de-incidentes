@@ -54,7 +54,13 @@ CREATE TABLE IF NOT EXISTS `usuarios` (
   `rol` enum('super_admin','administrador','usuario') NOT NULL DEFAULT 'usuario',
   `area_id` int DEFAULT NULL, `linea_id` int DEFAULT NULL, `es_lider` tinyint(1) NOT NULL DEFAULT 0,
   `activo` tinyint(1) NOT NULL DEFAULT 1, `fecha_creacion` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `correo` varchar(100) DEFAULT NULL, PRIMARY KEY (`id`), UNIQUE KEY `usuario` (`usuario`),
+  `correo` varchar(100) DEFAULT NULL, `telefono_contacto` varchar(20) DEFAULT NULL,
+  `telegram_user_id` bigint DEFAULT NULL, `telegram_chat_id` bigint DEFAULT NULL,
+  `telegram_habilitado` tinyint(1) NOT NULL DEFAULT 0, `telegram_vinculado_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`), UNIQUE KEY `usuario` (`usuario`),
+  UNIQUE KEY `uq_usuarios_telefono_contacto` (`telefono_contacto`),
+  UNIQUE KEY `uq_usuarios_telegram_user` (`telegram_user_id`),
+  UNIQUE KEY `uq_usuarios_telegram_chat` (`telegram_chat_id`),
   KEY `fk_usuarios_area` (`area_id`), KEY `fk_usuarios_linea` (`linea_id`),
   KEY `fk_usuarios_unidad_negocio` (`unidad_negocio_id`),
   CONSTRAINT `fk_usuarios_area` FOREIGN KEY (`area_id`) REFERENCES `areas` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
@@ -73,7 +79,10 @@ CREATE TABLE IF NOT EXISTS `incidencias` (
   `fecha_creacion` timestamp NULL DEFAULT CURRENT_TIMESTAMP, `fecha_asignacion` datetime DEFAULT NULL,
   `fecha_inicio_atencion` datetime DEFAULT NULL, `fecha_resolucion` datetime DEFAULT NULL,
   `fecha_reanudacion` datetime DEFAULT NULL, `fecha_cierre` datetime DEFAULT NULL,
-  `observacion_cierre` text, `causa_raiz` text, `solucion_aplicada` text, PRIMARY KEY (`id`),
+  `observacion_cierre` text, `causa_raiz` text, `solucion_aplicada` text,
+  `canal_origen` enum('web','telegram') NOT NULL DEFAULT 'web',
+  `telegram_update_id` bigint DEFAULT NULL, PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_incidencias_telegram_update` (`telegram_update_id`),
   KEY `fk_incidencias_linea` (`linea_id`), KEY `fk_incidencias_turno` (`turno_id`),
   KEY `fk_incidencias_area_origen` (`area_origen_id`), KEY `fk_incidencias_area_responsable` (`area_responsable_id`),
   KEY `fk_incidencias_usuario_creador` (`usuario_creador_id`), KEY `fk_incidencias_usuario_asignado` (`usuario_asignado_id`),
@@ -85,6 +94,40 @@ CREATE TABLE IF NOT EXISTS `incidencias` (
   CONSTRAINT `fk_incidencias_unidad_negocio` FOREIGN KEY (`unidad_negocio_id`) REFERENCES `unidades_negocio` (`id`),
   CONSTRAINT `fk_incidencias_usuario_asignado` FOREIGN KEY (`usuario_asignado_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_incidencias_usuario_creador` FOREIGN KEY (`usuario_creador_id`) REFERENCES `usuarios` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `telegram_conversaciones` (
+  `id` bigint NOT NULL AUTO_INCREMENT, `usuario_id` int NOT NULL,
+  `telegram_chat_id` bigint NOT NULL, `paso` varchar(50) NOT NULL, `datos_json` json DEFAULT NULL,
+  `fecha_ultimo_mensaje` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP, `fecha_expiracion` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`), UNIQUE KEY `uq_telegram_conversacion_usuario` (`usuario_id`),
+  UNIQUE KEY `uq_telegram_conversacion_chat` (`telegram_chat_id`),
+  KEY `idx_telegram_conversacion_expiracion` (`fecha_expiracion`),
+  CONSTRAINT `fk_telegram_conversacion_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `telegram_eventos` (
+  `id` bigint NOT NULL AUTO_INCREMENT, `telegram_update_id` bigint NOT NULL,
+  `usuario_id` int DEFAULT NULL, `incidencia_id` int DEFAULT NULL, `telegram_chat_id` bigint DEFAULT NULL,
+  `direccion` enum('entrada','salida') NOT NULL, `tipo` varchar(30) NOT NULL, `estado` varchar(30) DEFAULT NULL,
+  `fecha_creacion` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, `fecha_actualizacion` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`), UNIQUE KEY `uq_telegram_evento_update` (`telegram_update_id`),
+  KEY `idx_telegram_evento_usuario` (`usuario_id`), KEY `idx_telegram_evento_incidencia` (`incidencia_id`),
+  KEY `idx_telegram_evento_fecha` (`fecha_creacion`),
+  CONSTRAINT `fk_telegram_evento_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_telegram_evento_incidencia` FOREIGN KEY (`incidencia_id`) REFERENCES `incidencias` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `telegram_vinculaciones` (
+  `id` bigint NOT NULL AUTO_INCREMENT, `usuario_id` int NOT NULL,
+  `token_hash` char(64) NOT NULL, `creado_por` int NOT NULL,
+  `fecha_expiracion` datetime NOT NULL, `fecha_uso` datetime DEFAULT NULL,
+  `fecha_creacion` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`), UNIQUE KEY `uq_telegram_vinculacion_usuario` (`usuario_id`),
+  UNIQUE KEY `uq_telegram_vinculacion_token` (`token_hash`),
+  KEY `idx_telegram_vinculacion_expiracion` (`fecha_expiracion`),
+  CONSTRAINT `fk_telegram_vinculacion_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_telegram_vinculacion_creador` FOREIGN KEY (`creado_por`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `historial_incidencias` (
@@ -152,15 +195,25 @@ CREATE TABLE IF NOT EXISTS `configuracion` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `videos` (
-  `id` int NOT NULL AUTO_INCREMENT, `titulo` varchar(200) NOT NULL, `descripcion` varchar(500) DEFAULT NULL,
+  `id` int NOT NULL AUTO_INCREMENT, `unidad_negocio_id` int NOT NULL, `titulo` varchar(200) NOT NULL, `descripcion` varchar(500) DEFAULT NULL,
   `tipo` enum('archivo','youtube','url') NOT NULL DEFAULT 'archivo', `ruta` varchar(500) NOT NULL,
   `duracion_segundos` int unsigned DEFAULT NULL, `orden` int NOT NULL DEFAULT 1, `activo` tinyint(1) NOT NULL DEFAULT 1,
   `fecha_inicio` datetime DEFAULT NULL, `fecha_fin` datetime DEFAULT NULL, `usuario_creador_id` int DEFAULT NULL,
   `fecha_creacion` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `fecha_actualizacion` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`), KEY `fk_videos_usuario` (`usuario_creador_id`),
+  PRIMARY KEY (`id`), KEY `fk_videos_usuario` (`usuario_creador_id`), KEY `idx_videos_unidad_activo_orden` (`unidad_negocio_id`,`activo`,`orden`),
   KEY `idx_videos_activo_orden` (`activo`,`orden`), KEY `idx_videos_fechas` (`fecha_inicio`,`fecha_fin`),
-  CONSTRAINT `fk_videos_usuario` FOREIGN KEY (`usuario_creador_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `fk_videos_usuario` FOREIGN KEY (`usuario_creador_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_videos_unidad` FOREIGN KEY (`unidad_negocio_id`) REFERENCES `unidades_negocio` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `configuracion_tv_unidad` (
+  `id` int NOT NULL AUTO_INCREMENT, `unidad_negocio_id` int NOT NULL,
+  `mostrar_videos` tinyint(1) NOT NULL DEFAULT 1, `ruta_videos` varchar(500) DEFAULT NULL,
+  `mostrar_cerradas` tinyint(1) NOT NULL DEFAULT 0, `refresco_segundos` int unsigned NOT NULL DEFAULT 30,
+  `fecha_actualizacion` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`), UNIQUE KEY `uq_configuracion_tv_unidad` (`unidad_negocio_id`),
+  CONSTRAINT `fk_configuracion_tv_unidad` FOREIGN KEY (`unidad_negocio_id`) REFERENCES `unidades_negocio` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `config_envio_diario` (
@@ -179,3 +232,15 @@ CREATE TABLE IF NOT EXISTS `config_envio_diario_destinatarios` (
   CONSTRAINT `fk_envio_diario_destinatario_config` FOREIGN KEY (`config_id`) REFERENCES `config_envio_diario` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_envio_diario_destinatario_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `configuracion` (`clave`, `valor`, `tipo`, `categoria`, `editable`) VALUES
+  ('nombre_sistema', 'Centro de incidencias', 'texto', 'sistema', 1),
+  ('nombre_empresa', 'Confecciones Punto Textil', 'texto', 'sistema', 1),
+  ('zona_horaria', 'America/Mexico_City', 'texto', 'sistema', 1),
+  ('prioridad_default', 'media', 'texto', 'sistema', 1),
+  ('tiempo_primera_respuesta', '15', 'numero', 'sistema', 1),
+  ('tiempo_resolucion', '120', 'numero', 'sistema', 1),
+  ('notificaciones_pantalla', 'true', 'booleano', 'sistema', 1),
+  ('sonido_alertas', 'false', 'booleano', 'sistema', 1),
+  ('resumen_diario', 'true', 'booleano', 'sistema', 1)
+ON DUPLICATE KEY UPDATE `clave` = VALUES(`clave`);

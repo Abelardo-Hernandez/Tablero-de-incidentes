@@ -6,6 +6,7 @@ function convertirBooleanos(usuario) {
     return {
         ...usuario,
         es_lider: Boolean(usuario.es_lider),
+        telegram_habilitado: Boolean(usuario.telegram_habilitado),
         activo: Boolean(usuario.activo)
     };
 }
@@ -22,6 +23,21 @@ function correoValido(correo) {
     }
 
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo);
+}
+
+function normalizarTelefonoContacto(telefono) {
+    if (!telefono) return null;
+
+    const normalizado = String(telefono)
+        .trim()
+        .replace(/^00/, '')
+        .replace(/\D/g, '');
+
+    return normalizado || null;
+}
+
+function telefonoContactoValido(telefono) {
+    return !telefono || /^\d{10,15}$/.test(telefono);
 }
 
 function esSuperAdmin(usuario) {
@@ -242,6 +258,11 @@ async function obtenerUsuarios(req, res) {
                 u.nombre,
                 u.usuario,
                 u.correo,
+                u.telefono_contacto,
+                u.telegram_user_id,
+                u.telegram_chat_id,
+                u.telegram_habilitado,
+                u.telegram_vinculado_at,
                 u.rol,
                 u.unidad_negocio_id,
                 u.area_id,
@@ -299,6 +320,11 @@ async function obtenerUsuarioPorId(req, res) {
                 u.nombre,
                 u.usuario,
                 u.correo,
+                u.telefono_contacto,
+                u.telegram_user_id,
+                u.telegram_chat_id,
+                u.telegram_habilitado,
+                u.telegram_vinculado_at,
                 u.rol,
                 u.unidad_negocio_id,
                 u.area_id,
@@ -355,6 +381,7 @@ async function crearUsuario(req, res) {
             nombre,
             usuario,
             correo,
+            telefono_contacto,
             password,
             rol = 'usuario',
             unidad_negocio_id,
@@ -408,11 +435,20 @@ async function crearUsuario(req, res) {
 
         const usuarioNormalizado = usuario.trim().toLowerCase();
         const correoNormalizado = normalizarCorreo(correo);
+        const telefonoContactoNormalizado =
+            normalizarTelefonoContacto(telefono_contacto);
 
         if (!correoValido(correoNormalizado)) {
             return res.status(400).json({
                 success: false,
                 message: 'El correo no tiene un formato valido'
+            });
+        }
+
+        if (!telefonoContactoValido(telefonoContactoNormalizado)) {
+            return res.status(400).json({
+                success: false,
+                message: 'El telefono de contacto debe incluir de 10 a 15 digitos'
             });
         }
 
@@ -422,19 +458,22 @@ async function crearUsuario(req, res) {
             FROM usuarios
             WHERE usuario = ?
               OR (? IS NOT NULL AND correo = ?)
+              OR (? IS NOT NULL AND telefono_contacto = ?)
             LIMIT 1
             `,
             [
                 usuarioNormalizado,
                 correoNormalizado,
-                correoNormalizado
+                correoNormalizado,
+                telefonoContactoNormalizado,
+                telefonoContactoNormalizado
             ]
         );
 
         if (existentes.length > 0) {
             return res.status(409).json({
                 success: false,
-                message: 'El usuario o correo ya esta registrado'
+                message: 'El usuario, correo o telefono de contacto ya esta registrado'
             });
         }
 
@@ -460,6 +499,7 @@ async function crearUsuario(req, res) {
                 nombre,
                 usuario,
                 correo,
+                telefono_contacto,
                 password,
                 rol,
                 unidad_negocio_id,
@@ -468,12 +508,13 @@ async function crearUsuario(req, res) {
                 es_lider,
                 activo
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
             [
                 nombre.trim(),
                 usuarioNormalizado,
                 correoNormalizado,
+                telefonoContactoNormalizado,
                 passwordHash,
                 rol,
                 unidadObjetivoId,
@@ -508,6 +549,7 @@ async function actualizarUsuario(req, res) {
             nombre,
             usuario,
             correo,
+            telefono_contacto,
             rol,
             unidad_negocio_id,
             area_id,
@@ -528,6 +570,10 @@ async function actualizarUsuario(req, res) {
                 nombre,
                 usuario,
                 correo,
+                telefono_contacto,
+                telegram_user_id,
+                telegram_chat_id,
+                telegram_habilitado,
                 rol,
                 unidad_negocio_id,
                 area_id,
@@ -560,6 +606,9 @@ async function actualizarUsuario(req, res) {
         const nuevoCorreo = correo !== undefined
             ? normalizarCorreo(correo)
             : actual.correo;
+        const nuevoTelefonoContacto = telefono_contacto !== undefined
+            ? normalizarTelefonoContacto(telefono_contacto)
+            : actual.telefono_contacto;
         const nuevoRol = rol || actual.rol;
         const nuevaUnidadNegocioId =
             esSuperAdmin(req.user) && unidad_negocio_id !== undefined
@@ -582,6 +631,13 @@ async function actualizarUsuario(req, res) {
             return res.status(400).json({
                 success: false,
                 message: 'El correo no tiene un formato valido'
+            });
+        }
+
+        if (!telefonoContactoValido(nuevoTelefonoContacto)) {
+            return res.status(400).json({
+                success: false,
+                message: 'El telefono de contacto debe incluir de 10 a 15 digitos'
             });
         }
 
@@ -615,6 +671,7 @@ async function actualizarUsuario(req, res) {
             WHERE (
                 usuario = ?
                 OR (? IS NOT NULL AND correo = ?)
+                OR (? IS NOT NULL AND telefono_contacto = ?)
             )
               AND id <> ?
             LIMIT 1
@@ -623,6 +680,8 @@ async function actualizarUsuario(req, res) {
                 nuevoUsuario,
                 nuevoCorreo,
                 nuevoCorreo,
+                nuevoTelefonoContacto,
+                nuevoTelefonoContacto,
                 id
             ]
         );
@@ -630,7 +689,7 @@ async function actualizarUsuario(req, res) {
         if (duplicados.length > 0) {
             return res.status(409).json({
                 success: false,
-                message: 'El usuario o correo ya esta registrado'
+                message: 'El usuario, correo o telefono de contacto ya esta registrado'
             });
         }
 
@@ -665,6 +724,7 @@ async function actualizarUsuario(req, res) {
                 nombre = ?,
                 usuario = ?,
                 correo = ?,
+                telefono_contacto = ?,
                 rol = ?,
                 unidad_negocio_id = ?,
                 area_id = ?,
@@ -678,6 +738,7 @@ async function actualizarUsuario(req, res) {
                 nuevoNombre,
                 nuevoUsuario,
                 nuevoCorreo,
+                nuevoTelefonoContacto,
                 nuevoRol,
                 nuevaUnidadNegocioId,
                 validacion.areaId,

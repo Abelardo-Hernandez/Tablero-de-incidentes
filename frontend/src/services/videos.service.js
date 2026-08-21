@@ -15,7 +15,10 @@ export async function obtenerVideosLocales() {
     return respuesta.data;
 }
 
-export async function validarRutaVideos(ruta) {
-    const respuesta = await api.post('/videos/validar-ruta', { ruta });
+export async function validarRutaVideos(ruta, unidadNegocioId) {
+    const respuesta = await api.post('/videos/validar-ruta', {
+        ruta,
+        unidad_negocio_id: unidadNegocioId || undefined
+    });
     return respuesta.data;
 }

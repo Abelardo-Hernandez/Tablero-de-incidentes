@@ -9,6 +9,7 @@ export const configuracionInicial = {
     tiempoPrimeraRespuesta: 15,
     tiempoResolucion: 120,
     refrescoTv: 30,
+    mostrarVideosTv: true,
     mostrarCerradasTv: false,
     notificacionesPantalla: true,
     sonidoAlertas: false,

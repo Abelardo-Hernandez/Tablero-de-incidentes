@@ -17,6 +17,9 @@ const {
 const {
     sincronizarVideos
 } = require('./routes/videos.routes');
+const {
+    iniciarBotTelegram
+} = require('./services/telegram-bot.service');
 
 const PORT = process.env.PORT || 3010;
 
@@ -43,6 +46,7 @@ async function iniciarServidor() {
         app.listen(PORT, () => {
             iniciarProgramadorEnvioDiario();
             iniciarProgramadorConfirmacionSolucion();
+            iniciarBotTelegram();
 
             console.log('======================================');
             console.log(' Tablero de Incidentes');

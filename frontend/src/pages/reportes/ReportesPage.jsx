@@ -1116,59 +1116,6 @@ function ReportesPage() {
             promedioAtencion
         };
 
-        const tablasResumen = [
-            [
-                'Por área que atiende',
-                agruparPor(
-                    incidenciasDia,
-                    (incidencia) => incidencia.area_nombre
-                )
-            ],
-            [
-                'Por línea',
-                agruparPor(
-                    incidenciasDia,
-                    (incidencia) => incidencia.linea_nombre
-                )
-            ],
-            [
-                'Por prioridad',
-                agruparPor(
-                    incidenciasDia,
-                    (incidencia) =>
-                        prioridades[incidencia.prioridad]
-                )
-            ],
-            [
-                'Por estado',
-                agruparPor(
-                    incidenciasDia,
-                    (incidencia) => estados[incidencia.estado]
-                )
-            ],
-            [
-                'Responsables',
-                agruparPor(
-                    incidenciasDia.filter(
-                        (incidencia) =>
-                            incidencia.responsable_nombre
-                    ),
-                    (incidencia) =>
-                        incidencia.responsable_nombre
-                )
-            ],
-            [
-                'Tipos de falla',
-                agruparPor(
-                    incidenciasDia,
-                    (incidencia) =>
-                        tipos[incidencia.tipo] ||
-                        incidencia.tipo_nombre ||
-                        incidencia.tipo
-                )
-            ]
-        ];
-
         const ventana = window.open('', '_blank');
 
         if (!ventana) {
@@ -1207,28 +1154,6 @@ function ReportesPage() {
                     </article>
                 `
             )
-            .join('');
-
-        const rankingsHtml = tablasResumen
-            .map(([titulo, datos]) => `
-                <section class="ranking">
-                    <h2>${escaparHtml(titulo)}</h2>
-                    ${
-                        datos.length
-                            ? datos
-                                .map(
-                                    (item) => `
-                                        <div class="ranking-row">
-                                            <span>${escaparHtml(item.nombre)}</span>
-                                            <strong>${item.cantidad}</strong>
-                                        </div>
-                                    `
-                                )
-                                .join('')
-                            : '<p class="empty">Sin datos.</p>'
-                    }
-                </section>
-            `)
             .join('');
 
         const filasHtml = incidenciasDia.length
@@ -1280,23 +1205,20 @@ function ReportesPage() {
                             margin-bottom: 18px;
                         }
 
-                        .kpis,
-                        .rankings {
+                        .kpis {
                             display: grid;
                             gap: 10px;
                             grid-template-columns: repeat(5, 1fr);
                             margin-bottom: 18px;
                         }
 
-                        .kpi,
-                        .ranking {
+                        .kpi {
                             border: 1px solid #e2e8f0;
                             border-radius: 10px;
                             padding: 10px;
                         }
 
-                        .kpi span,
-                        .empty {
+                        .kpi span {
                             color: #64748b;
                             display: block;
                             font-size: 11px;
@@ -1306,15 +1228,6 @@ function ReportesPage() {
                             display: block;
                             font-size: 20px;
                             margin-top: 5px;
-                        }
-
-                        .ranking-row {
-                            align-items: center;
-                            border-top: 1px solid #f1f5f9;
-                            display: flex;
-                            font-size: 11px;
-                            justify-content: space-between;
-                            padding: 6px 0;
                         }
 
                         table {
@@ -1741,7 +1654,14 @@ function GraficaBarras({
     titulo,
     datos
 }) {
-    const maximo = datos[0]?.cantidad || 1;
+    const maximo = Math.max(
+        1,
+        ...datos.map((item) => Number(item.cantidad) || 0)
+    );
+    const total = datos.reduce(
+        (suma, item) => suma + Number(item.cantidad || 0),
+        0
+    );
 
     return (
         <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1755,15 +1675,18 @@ function GraficaBarras({
                             <span className="truncate font-semibold text-slate-700">
                                 {item.nombre}
                             </span>
-                            <span className="font-bold text-slate-950">
+                            <span className="shrink-0 font-bold text-slate-950">
                                 {item.cantidad}
+                                <small className="ml-1 font-semibold text-slate-400">
+                                    ({total ? Math.round((item.cantidad / total) * 100) : 0}%)
+                                </small>
                             </span>
                         </div>
                         <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
                             <div
                                 className="h-full rounded-full bg-emerald-600"
                                 style={{
-                                    width: `${Math.max(8, (item.cantidad / maximo) * 100)}%`
+                                    width: `${Math.max(3, (item.cantidad / maximo) * 100)}%`
                                 }}
                             />
                         </div>
@@ -1782,6 +1705,38 @@ function GraficaDistribucion({
         (suma, item) => suma + item.cantidad,
         0
     );
+    const colores = [
+        '#059669',
+        '#f59e0b',
+        '#ef4444',
+        '#3b82f6',
+        '#8b5cf6',
+        '#06b6d4',
+        '#f97316',
+        '#64748b'
+    ];
+    let acumulado = 0;
+    const segmentos = datos.map((item, indice) => {
+        const inicio = acumulado;
+        const porcentaje = total
+            ? (Number(item.cantidad) / total) * 100
+            : 0;
+        acumulado += porcentaje;
+        return {
+            ...item,
+            color: colores[indice % colores.length],
+            porcentaje,
+            inicio,
+            fin: acumulado
+        };
+    });
+    const fondo = total
+        ? `conic-gradient(${segmentos
+            .map((item) =>
+                `${item.color} ${item.inicio.toFixed(2)}% ${item.fin.toFixed(2)}%`
+            )
+            .join(', ')})`
+        : '#e2e8f0';
 
     return (
         <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1790,9 +1745,11 @@ function GraficaDistribucion({
                 <div
                     className="mx-auto grid h-28 w-28 place-items-center rounded-full"
                     style={{
-                        background:
-                            'conic-gradient(#059669 0 35%, #f59e0b 35% 62%, #ef4444 62% 80%, #3b82f6 80% 100%)'
+                        background: fondo,
+                        transition: 'background 300ms ease'
                     }}
+                    role="img"
+                    aria-label={`${titulo}: ${total} incidencias`}
                 >
                     <div className="grid h-20 w-20 place-items-center rounded-full bg-white">
                         <span className="text-xl font-bold text-slate-950">
@@ -1803,16 +1760,23 @@ function GraficaDistribucion({
                 <div className="space-y-2.5">
                     {datos.length === 0 ? (
                         <p className="text-sm text-slate-500">Sin datos.</p>
-                    ) : datos.map((item) => (
+                    ) : segmentos.map((item) => (
                         <div
                             key={item.nombre}
                             className="flex items-center justify-between gap-4 text-sm"
                         >
-                            <span className="truncate font-semibold text-slate-700">
-                                {item.nombre}
+                            <span className="flex min-w-0 items-center gap-2 font-semibold text-slate-700">
+                                <span
+                                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                    style={{ backgroundColor: item.color }}
+                                />
+                                <span className="truncate">{item.nombre}</span>
                             </span>
-                            <span className="font-bold text-slate-950">
+                            <span className="shrink-0 font-bold text-slate-950">
                                 {item.cantidad}
+                                <small className="ml-1 font-semibold text-slate-400">
+                                    ({Math.round(item.porcentaje)}%)
+                                </small>
                             </span>
                         </div>
                     ))}

@@ -51,3 +51,13 @@ export async function cambiarPasswordUsuario(
 
     return response.data;
 }
+
+export async function generarVinculacionTelegram(id) {
+    const response = await api.post(`/usuarios/${id}/telegram/vinculacion`);
+    return response.data;
+}
+
+export async function desvincularTelegram(id) {
+    const response = await api.delete(`/usuarios/${id}/telegram/vinculacion`);
+    return response.data;
+}

@@ -13,6 +13,7 @@ import {
 
 import useAuth from '../../hooks/useAuth';
 import {
+    marcarNotificacionLeida,
     obtenerNotificacionesServidor
 } from '../../services/notificaciones.service';
 import {
@@ -67,6 +68,33 @@ function mostrarAvisoNavegador(aviso) {
     }
 }
 
+function claveAvisosCerrados(usuarioId) {
+    const fecha = new Date().toLocaleDateString('en-CA');
+    return `tablero-avisos-cerrados:${usuarioId}:${fecha}`;
+}
+
+function cargarAvisosCerrados(usuarioId) {
+    if (!usuarioId) return new Set();
+    try {
+        return new Set(
+            JSON.parse(
+                localStorage.getItem(claveAvisosCerrados(usuarioId)) || '[]'
+            ).map(Number)
+        );
+    } catch {
+        return new Set();
+    }
+}
+
+function recordarAvisoCerrado(usuarioId, id) {
+    const cerrados = cargarAvisosCerrados(usuarioId);
+    cerrados.add(Number(id));
+    localStorage.setItem(
+        claveAvisosCerrados(usuarioId),
+        JSON.stringify([...cerrados])
+    );
+}
+
 function SystemNotifications() {
     const { usuario } = useAuth();
     const [configuracion, setConfiguracion] = useState(
@@ -88,22 +116,39 @@ function SystemNotifications() {
     }, []);
 
     useEffect(() => {
-        vistosSesionRef.current.clear();
+        vistosSesionRef.current = cargarAvisosCerrados(usuario?.id);
         setAvisos([]);
     }, [usuario?.id]);
+
+    async function cerrarAviso(aviso) {
+        recordarAvisoCerrado(usuario?.id, aviso.id);
+        vistosSesionRef.current.add(Number(aviso.id));
+        setAvisos((actual) =>
+            actual.filter((item) => item.id !== aviso.id)
+        );
+
+        try {
+            await marcarNotificacionLeida(aviso.id);
+        } catch (error) {
+            console.error('No fue posible marcar el aviso como leido:', error);
+        }
+    }
 
     const revisarNotificaciones = useCallback(async () => {
         if (!usuario?.id || !configuracion.notificacionesPantalla) return;
 
         try {
             const respuesta = await obtenerNotificacionesServidor();
+            const cerradosHoy = cargarAvisosCerrados(usuario.id);
             const nuevas = (respuesta.data || []).filter(
-                (aviso) => !vistosSesionRef.current.has(aviso.id)
+                (aviso) =>
+                    !vistosSesionRef.current.has(Number(aviso.id)) &&
+                    !cerradosHoy.has(Number(aviso.id))
             );
 
             if (nuevas.length === 0) return;
 
-            nuevas.forEach((aviso) => vistosSesionRef.current.add(aviso.id));
+            nuevas.forEach((aviso) => vistosSesionRef.current.add(Number(aviso.id)));
             setAvisos((actual) => [...nuevas, ...actual].slice(0, 4));
 
             nuevas.forEach((aviso) => {
@@ -189,9 +234,7 @@ function SystemNotifications() {
                             <button
                                 type="button"
                                 aria-label="Cerrar aviso"
-                                onClick={() => setAvisos((actual) =>
-                                    actual.filter((item) => item.id !== aviso.id)
-                                )}
+                                onClick={() => cerrarAviso(aviso)}
                                 className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                             >
                                 <X size={16} />

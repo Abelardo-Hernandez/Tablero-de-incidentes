@@ -18,27 +18,43 @@ const extensionesPermitidas = new Set([
     '.mov'
 ]);
 
-async function obtenerRutaVideos(rutaAlternativa = '') {
+function unidadSolicitada(req) {
+    const solicitada = Number(req.body?.unidad_negocio_id || req.query?.unidad_negocio_id);
+    return req.user.rol === 'super_admin' && solicitada
+        ? solicitada
+        : Number(req.user.unidad_negocio_id);
+}
+
+async function obtenerRutaVideos(unidadNegocioId, rutaAlternativa = '') {
     if (rutaAlternativa) {
         return path.resolve(rutaAlternativa);
     }
 
     const [[configuracion]] = await db.query(
         `
-        SELECT valor
-        FROM configuracion
-        WHERE clave = 'ruta_videos'
+        SELECT ruta_videos
+        FROM configuracion_tv_unidad
+        WHERE unidad_negocio_id = ?
         LIMIT 1
-        `
+        `,
+        [unidadNegocioId]
     );
 
-    return configuracion?.valor
-        ? path.resolve(configuracion.valor)
+    return configuracion?.ruta_videos
+        ? path.resolve(configuracion.ruta_videos)
         : path.resolve(__dirname, '../../../frontend/public/videos');
 }
 
-async function sincronizarVideos(rutaAlternativa = '') {
-    const videosPath = await obtenerRutaVideos(rutaAlternativa);
+async function sincronizarVideos(unidadNegocioId, rutaAlternativa = '') {
+    if (!unidadNegocioId) {
+        const [unidades] = await db.query('SELECT id FROM unidades_negocio WHERE activo = 1');
+        for (const unidad of unidades) {
+            await sincronizarVideos(unidad.id);
+        }
+        return null;
+    }
+
+    const videosPath = await obtenerRutaVideos(unidadNegocioId, rutaAlternativa);
     const archivos = await fs.readdir(videosPath, {
         withFileTypes: true
     });
@@ -55,14 +71,15 @@ async function sincronizarVideos(rutaAlternativa = '') {
         `
         UPDATE videos
         SET activo = 0
-        WHERE tipo = 'archivo'
-        `
+        WHERE tipo = 'archivo' AND unidad_negocio_id = ?
+        `,
+        [unidadNegocioId]
     );
 
     for (let indice = 0; indice < nombres.length; indice += 1) {
         const [existentes] = await db.query(
-            'SELECT id FROM videos WHERE tipo = ? AND ruta = ? LIMIT 1',
-            ['archivo', rutas[indice]]
+        'SELECT id FROM videos WHERE unidad_negocio_id = ? AND tipo = ? AND ruta = ? LIMIT 1',
+            [unidadNegocioId, 'archivo', rutas[indice]]
         );
 
         if (existentes.length > 0) {
@@ -77,10 +94,10 @@ async function sincronizarVideos(rutaAlternativa = '') {
         } else {
             await db.query(
                 `
-                INSERT INTO videos (titulo, tipo, ruta, orden, activo)
-                VALUES (?, 'archivo', ?, ?, 1)
+                INSERT INTO videos (unidad_negocio_id, titulo, tipo, ruta, orden, activo)
+                VALUES (?, ?, 'archivo', ?, ?, 1)
                 `,
-                [nombres[indice], rutas[indice], indice + 1]
+                [unidadNegocioId, nombres[indice], rutas[indice], indice + 1]
             );
         }
     }
@@ -92,7 +109,7 @@ router.get('/archivo/:id', async (req, res) => {
     try {
         const [[video]] = await db.query(
             `
-            SELECT ruta
+            SELECT ruta, unidad_negocio_id
             FROM videos
             WHERE id = ? AND activo = 1 AND tipo = 'archivo'
             LIMIT 1
@@ -104,7 +121,7 @@ router.get('/archivo/:id', async (req, res) => {
             return res.status(404).end();
         }
 
-        const raiz = await obtenerRutaVideos();
+        const raiz = await obtenerRutaVideos(video.unidad_negocio_id);
         const ruta = path.resolve(video.ruta);
         const rutaRelativa = path.relative(raiz, ruta);
 
@@ -126,8 +143,9 @@ router.use(verificarToken);
 
 router.post('/validar-ruta', soloAdministrador, async (req, res) => {
     try {
+        const unidadNegocioId = unidadSolicitada(req);
         const ruta = String(req.body.ruta || '').trim();
-        const videosPath = await obtenerRutaVideos(ruta);
+        const videosPath = await obtenerRutaVideos(unidadNegocioId, ruta);
         const estado = await fs.stat(videosPath).catch(() => null);
 
         if (!estado?.isDirectory()) {
@@ -139,22 +157,22 @@ router.post('/validar-ruta', soloAdministrador, async (req, res) => {
 
         await db.query(
             `
-            INSERT INTO configuracion (clave, valor, tipo, categoria, editable)
-            VALUES ('ruta_videos', ?, 'texto', 'sistema', 1)
-            ON DUPLICATE KEY UPDATE
-                valor = VALUES(valor),
+            INSERT INTO configuracion_tv_unidad (unidad_negocio_id, ruta_videos)
+            VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE ruta_videos = VALUES(ruta_videos),
                 fecha_actualizacion = CURRENT_TIMESTAMP
             `,
-            [ruta ? videosPath : '']
+            [unidadNegocioId, ruta ? videosPath : null]
         );
 
-        await sincronizarVideos(videosPath);
+        await sincronizarVideos(unidadNegocioId, videosPath);
         const [[conteo]] = await db.query(
             `
             SELECT COUNT(*) AS total
             FROM videos
-            WHERE activo = 1 AND tipo = 'archivo'
-            `
+            WHERE activo = 1 AND tipo = 'archivo' AND unidad_negocio_id = ?
+            `,
+            [unidadNegocioId]
         );
 
         return res.json({
@@ -178,13 +196,15 @@ router.post('/validar-ruta', soloAdministrador, async (req, res) => {
 
 router.get('/', async (req, res) => {
     try {
+        const unidadNegocioId = Number(req.user.unidad_negocio_id);
         const [videos] = await db.query(
             `
             SELECT id, titulo AS nombre, orden
             FROM videos
-            WHERE activo = 1 AND tipo = 'archivo'
+            WHERE activo = 1 AND tipo = 'archivo' AND unidad_negocio_id = ?
             ORDER BY orden ASC, titulo ASC
-            `
+            `,
+            [unidadNegocioId]
         );
 
         return res.json({

@@ -2,10 +2,13 @@ import {
     ArrowLeft,
     Edit3,
     KeyRound,
+    MessageCircle,
+    Phone,
     Plus,
     Search,
     ToggleLeft,
     ToggleRight,
+    Unlink,
     UserRound,
     Users
 } from 'lucide-react';
@@ -22,6 +25,8 @@ import {
 
 import {
     cambiarEstadoUsuario,
+    desvincularTelegram,
+    generarVinculacionTelegram,
     obtenerUsuarios
 } from '../../services/usuarios.service';
 
@@ -196,6 +201,46 @@ function UsuariosPage() {
         }
     }
 
+    async function vincularTelegram(usuarioObjetivo) {
+        try {
+            setError('');
+            const respuesta = await generarVinculacionTelegram(usuarioObjetivo.id);
+            const url = respuesta.data?.url;
+            if (!url) throw new Error('El servidor no genero la liga de Telegram.');
+
+            await navigator.clipboard?.writeText(url).catch(() => {});
+            window.open(url, '_blank', 'noopener,noreferrer');
+            window.alert(
+                `Liga personal generada para ${usuarioObjetivo.nombre}. ` +
+                'Se abrio Telegram y la liga se copio al portapapeles. Vence en 24 horas.'
+            );
+        } catch (errorSolicitud) {
+            setError(
+                errorSolicitud.response?.data?.message ||
+                errorSolicitud.message ||
+                'No fue posible generar la vinculacion de Telegram.'
+            );
+        }
+    }
+
+    async function quitarTelegram(usuarioObjetivo) {
+        const confirmado = window.confirm(
+            `¿Deseas desvincular la cuenta de Telegram de ${usuarioObjetivo.nombre}?`
+        );
+        if (!confirmado) return;
+
+        try {
+            setError('');
+            await desvincularTelegram(usuarioObjetivo.id);
+            await cargarUsuarios();
+        } catch (errorSolicitud) {
+            setError(
+                errorSolicitud.response?.data?.message ||
+                'No fue posible desvincular la cuenta de Telegram.'
+            );
+        }
+    }
+
     return (
         <div className="mx-auto max-w-[1600px] space-y-6">
             <div className="flex items-start gap-3">
@@ -310,18 +355,19 @@ function UsuariosPage() {
                     </div>
                 ) : (
                     <div className="custom-scrollbar overflow-x-auto">
-                        <table className="w-full min-w-[1240px] table-fixed text-left">
+                        <table className="w-full min-w-[1380px] table-fixed text-left">
                             <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-400">
                                 <tr>
-                                    <th className="w-[17%] px-4 py-2.5">Usuario</th>
-                                    <th className="w-[15%] px-4 py-2.5">Correo</th>
-                                    <th className="w-[13%] px-4 py-2.5">Unidad</th>
-                                    <th className="w-[9%] px-4 py-2.5">Rol</th>
-                                    <th className="w-[12%] px-4 py-2.5">Área</th>
-                                    <th className="w-[12%] px-4 py-2.5">Línea</th>
-                                    <th className="w-[11%] px-4 py-2.5">Responsabilidad</th>
-                                    <th className="w-[7%] px-4 py-2.5">Estado</th>
-                                    <th className="w-[12%] py-2.5 pl-4 pr-8">Acciones</th>
+                                    <th className="w-[17%] px-4 py-2">Usuario</th>
+                                    <th className="w-[15%] px-4 py-2">Correo</th>
+                                    <th className="w-[14%] px-4 py-2">Contacto</th>
+                                    <th className="w-[13%] px-4 py-2">Unidad</th>
+                                    <th className="w-[9%] px-4 py-2">Rol</th>
+                                    <th className="w-[12%] px-4 py-2">Área</th>
+                                    <th className="w-[12%] px-4 py-2">Línea</th>
+                                    <th className="w-[11%] px-4 py-2">Responsabilidad</th>
+                                    <th className="w-[7%] px-4 py-2">Estado</th>
+                                    <th className="w-[12%] py-2 pl-4 pr-8">Acciones</th>
                                 </tr>
                             </thead>
 
@@ -340,9 +386,9 @@ function UsuariosPage() {
                                             key={usuario.id}
                                             className="transition hover:bg-slate-50"
                                         >
-                                            <td className="px-4 py-2.5">
-                                                <div className="flex min-w-0 items-center gap-2.5">
-                                                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-100 text-xs font-bold text-emerald-800">
+                                            <td className="px-4 py-1.5">
+                                                <div className="flex min-w-0 items-center gap-2">
+                                                    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-emerald-100 text-[11px] font-bold text-emerald-800">
                                                         {iniciales}
                                                     </div>
 
@@ -351,46 +397,71 @@ function UsuariosPage() {
                                                             {usuario.nombre}
                                                         </p>
 
-                                                        <p className="truncate text-sm text-slate-500">
+                                                        <p className="truncate text-xs text-slate-500">
                                                             @{usuario.usuario}
                                                         </p>
                                                     </div>
                                                 </div>
                                             </td>
 
-                                            <td className="px-4 py-2.5">
+                                            <td className="px-4 py-1.5">
                                                 <p className="max-w-52 truncate text-sm font-semibold text-slate-700">
                                                     {usuario.correo ||
                                                         'Sin correo'}
                                                 </p>
                                             </td>
 
-                                            <td className="px-4 py-2.5">
+                                            <td className="px-4 py-1.5">
+                                                <div className="flex max-w-48 items-center gap-2">
+                                                    <span
+                                                        title={usuario.telegram_habilitado
+                                                            ? 'Telegram vinculado'
+                                                            : 'Telegram no vinculado'}
+                                                        aria-label={usuario.telegram_habilitado
+                                                            ? 'Telegram vinculado'
+                                                            : 'Telegram no vinculado'}
+                                                        className={[
+                                                    'grid h-7 w-7 shrink-0 place-items-center rounded-full',
+                                                    usuario.telegram_habilitado
+                                                        ? 'bg-emerald-100 text-emerald-700'
+                                                        : 'bg-red-100 text-red-600'
+                                                ].join(' ')}>
+                                                        <Phone size={14} />
+                                                    </span>
+                                                    <p className="min-w-0 truncate text-sm font-semibold text-slate-700">
+                                                        {usuario.telefono_contacto
+                                                            ? `+${usuario.telefono_contacto}`
+                                                            : 'Sin telefono'}
+                                                    </p>
+                                                </div>
+                                            </td>
+
+                                            <td className="px-4 py-1.5">
                                                 <p className="max-w-44 truncate text-sm font-semibold text-slate-700">
                                                     {usuario.unidad_negocio_nombre ||
                                                         'Sin unidad'}
                                                 </p>
                                             </td>
 
-                                            <td className="px-4 py-2.5 text-sm font-semibold capitalize text-slate-700">
+                                            <td className="px-4 py-1.5 text-sm font-semibold capitalize text-slate-700">
                                                 {usuario.rol}
                                             </td>
 
-                                            <td className="px-4 py-2.5">
+                                            <td className="px-4 py-1.5">
                                                 <p className="max-w-48 truncate text-sm font-semibold text-slate-700">
                                                     {usuario.area_nombre ||
                                                         'Sin área'}
                                                 </p>
                                             </td>
 
-                                            <td className="px-4 py-2.5">
+                                            <td className="px-4 py-1.5">
                                                 <p className="max-w-48 truncate text-sm font-semibold text-slate-700">
                                                     {usuario.linea_nombre ||
                                                         'No aplica'}
                                                 </p>
                                             </td>
 
-                                            <td className="px-4 py-2.5">
+                                            <td className="px-4 py-1.5">
                                                 {usuario.es_lider ? (
                                                     <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
                                                         Líder de área
@@ -402,7 +473,7 @@ function UsuariosPage() {
                                                 )}
                                             </td>
 
-                                            <td className="px-4 py-2.5">
+                                            <td className="px-4 py-1.5">
                                                 <span
                                                     className={[
                                                         'inline-flex rounded-full px-2 py-0.5 text-xs font-bold',
@@ -417,7 +488,7 @@ function UsuariosPage() {
                                                 </span>
                                             </td>
 
-                                            <td className="py-2.5 pl-4 pr-8">
+                                            <td className="py-1.5 pl-4 pr-8">
                                                 <div className="flex items-center justify-start gap-1">
                                                     <button
                                                         type="button"
@@ -425,7 +496,7 @@ function UsuariosPage() {
                                                         onClick={() =>
                                                             abrirEditarUsuario(usuario)
                                                         }
-                                                        className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
+                                                        className="grid h-7 w-7 place-items-center rounded-lg text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
                                                     >
                                                         <Edit3 size={16} />
                                                     </button>
@@ -436,7 +507,7 @@ function UsuariosPage() {
                                                         onClick={() =>
                                                             abrirCambioPassword(usuario)
                                                         }
-                                                        className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-amber-50 hover:text-amber-700"
+                                                        className="grid h-7 w-7 place-items-center rounded-lg text-slate-500 transition hover:bg-amber-50 hover:text-amber-700"
                                                     >
                                                         <KeyRound size={16} />
                                                     </button>
@@ -452,7 +523,7 @@ function UsuariosPage() {
                                                             cambiarEstado(usuario)
                                                         }
                                                         className={[
-                                                            'grid h-8 w-8 place-items-center rounded-lg transition',
+                                                            'grid h-7 w-7 place-items-center rounded-lg transition',
                                                             usuario.activo
                                                                 ? 'text-emerald-600 hover:bg-red-50 hover:text-red-600'
                                                                 : 'text-slate-400 hover:bg-emerald-50 hover:text-emerald-700'
@@ -464,6 +535,28 @@ function UsuariosPage() {
                                                             <ToggleLeft size={20} />
                                                         )}
                                                     </button>
+
+                                                    <button
+                                                        type="button"
+                                                        title={usuario.telegram_habilitado
+                                                            ? 'Generar nueva vinculacion de Telegram'
+                                                            : 'Vincular Telegram'}
+                                                        onClick={() => vincularTelegram(usuario)}
+                                                        className="grid h-7 w-7 place-items-center rounded-lg text-slate-500 transition hover:bg-sky-50 hover:text-sky-700"
+                                                    >
+                                                        <MessageCircle size={17} />
+                                                    </button>
+
+                                                    {usuario.telegram_habilitado && (
+                                                        <button
+                                                            type="button"
+                                                            title="Desvincular Telegram"
+                                                            onClick={() => quitarTelegram(usuario)}
+                                                            className="grid h-7 w-7 place-items-center rounded-lg text-slate-500 transition hover:bg-red-50 hover:text-red-700"
+                                                        >
+                                                            <Unlink size={16} />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

@@ -1,73 +1,80 @@
-# Tablero de Incidentes
+# Centro de incidencias
 
-Sistema web para registrar, asignar, atender y consultar incidentes operativos por unidad de negocio. Incluye tablero para usuarios, vista TV, histórico, alertas por paro de línea, notificaciones, videos informativos, reportes diarios por correo y administración de catálogos.
+Sistema interno para registrar, asignar, atender y consultar incidencias operativas por unidad de negocio. Incluye tablero web, vista TV, historial, reportes diarios por correo, notificaciones, videos por unidad y atención mediante Telegram.
 
-## Arquitectura
+## Componentes
 
-- **Frontend:** React 19, Vite 8 y Tailwind CSS 4.
-- **Backend:** Node.js, Express 5 y API REST.
-- **Base de datos:** MySQL 8 con tablas InnoDB y codificación `utf8mb4`.
-- **Autenticación:** JWT.
-- **Procesos auxiliares:** correo SMTP, Web Push y sincronización de una carpeta local de videos.
-- **Confirmación de soluciones:** cierre automático después de una hora sin respuesta del área reportante.
+- Frontend: React 19, Vite 8 y Tailwind CSS 4.
+- Backend: Node.js, Express 5 y API REST.
+- Base de datos: MySQL 8, InnoDB y `utf8mb4`.
+- Autenticación: JWT.
+- Integraciones opcionales: Telegram Bot, SMTP y Web Push.
 
-El navegador conserva únicamente la sesión necesaria para consumir la API. Los usuarios, catálogos, incidentes, comentarios, historial, configuraciones, notificaciones, videos y destinatarios del reporte diario se almacenan en MySQL.
+El frontend y el backend se ejecutan como procesos diferentes. Esto es correcto: solo debe existir **una instancia del backend**, porque allí se ejecutan Telegram y los programadores automáticos.
 
-## Requisitos del equipo servidor
+## Funciones principales
 
-- Node.js 20 LTS o superior y npm.
-- MySQL 8.0 o superior.
-- Una cuenta de MySQL dedicada para la aplicación.
-- Una carpeta legible por el proceso de Node para los videos.
-- Opcional: servidor SMTP y claves VAPID para correo y notificaciones push.
+- Incidencias por unidad, área, línea, turno, tipo y prioridad.
+- Asignación, comentarios, solución, confirmación y cierre administrativo.
+- Historial completo de cada incidencia.
+- Vista TV con videos y preferencias independientes por unidad.
+- Resumen diario por correo y formato imprimible.
+- Notificaciones en pantalla, navegador y Telegram.
+- Telegram privado por colaborador: vinculación, creación de reportes, consulta, toma, comentarios y envío de solución.
+- Roles `super_admin`, `administrador` y `usuario`.
 
-Para producción se recomienda asignar una IP fija al servidor, ejecutar el backend como servicio (por ejemplo con PM2, NSSM o systemd) y publicar el frontend mediante Nginx, IIS o Apache.
+## Requisitos para Windows 11
 
-## Estructura
+- Windows 11 actualizado.
+- Node.js 20 LTS o superior (se recomienda una versión LTS).
+- MySQL Server 8.0 y MySQL Workbench.
+- Acceso a Internet si se utilizarán Telegram, correo o Web Push.
+- IP fija o reservada para el equipo servidor si otros equipos accederán por red.
+- Permiso de lectura para las carpetas de videos.
 
-```text
-tablero_incidentes/
-├── backend/
-│   ├── scripts/             # Utilidades para administrador y VAPID
-│   ├── sql/                 # Instalador completo y complementos SQL
-│   └── src/                 # API, controladores, rutas y servicios
-├── frontend/
-│   ├── public/              # PWA y recursos públicos
-│   └── src/                 # Aplicación React
-└── README.md
-```
+No copie `node_modules`, `frontend/dist`, archivos `.env`, registros `*.log` ni respaldos con credenciales desde el equipo de desarrollo.
 
-## Instalación en el nuevo equipo
+## 1. Crear la base de datos
 
-### 1. Copiar el proyecto
+El instalador completo es:
 
-Copie el repositorio sin las carpetas `node_modules`, `frontend/dist` ni los archivos `.env`. Las credenciales deben configurarse directamente en el nuevo servidor.
+[backend/sql/esquema_completo.sql](backend/sql/esquema_completo.sql)
 
-### 2. Crear la base de datos
+Contiene la creación de `tablero_incidentes`, sus 20 tablas, relaciones, índices y configuración básica. No contiene usuarios, incidentes ni datos de prueba.
 
-El archivo [backend/sql/esquema_completo.sql](backend/sql/esquema_completo.sql) crea la base `tablero_incidentes` y sus 16 tablas, índices y relaciones, sin datos de prueba:
+### Con MySQL Workbench
+
+1. Abra MySQL Workbench y conéctese al servidor local.
+2. Abra una pestaña SQL nueva.
+3. Abra `backend/sql/esquema_completo.sql` o copie todo su contenido.
+4. Ejecute el script completo con el botón del rayo.
+5. Actualice la sección **Schemas** y confirme que aparezca `tablero_incidentes`.
+
+### Desde PowerShell
 
 ```powershell
-mysql -u root -p < backend/sql/esquema_completo.sql
+cd C:\ruta\tablero_incidentes
+mysql -u root -p < backend\sql\esquema_completo.sql
 ```
 
-Si se utilizará otro nombre de base, cambie las dos primeras instrucciones del archivo y use el mismo nombre en `DB_NAME`.
-
-Es recomendable crear un usuario exclusivo en MySQL y otorgarle permisos solamente sobre esta base:
+Se recomienda crear una cuenta exclusiva para la aplicación:
 
 ```sql
-CREATE USER 'tablero_app'@'localhost' IDENTIFIED BY 'CAMBIAR_CONTRASENA_SEGURA';
+CREATE USER 'tablero_app'@'localhost'
+IDENTIFIED BY 'CAMBIAR_POR_UNA_CONTRASENA_SEGURA';
+
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
 ON tablero_incidentes.* TO 'tablero_app'@'localhost';
+
 FLUSH PRIVILEGES;
 ```
 
-### 3. Configurar el backend
+## 2. Instalar y configurar el backend
 
 ```powershell
-cd backend
-Copy-Item .env.example .env
+cd C:\ruta\tablero_incidentes\backend
 npm install
+Copy-Item .env.example .env
 ```
 
 Edite `backend/.env`:
@@ -78,197 +85,240 @@ PORT=3010
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=tablero_app
-DB_PASSWORD=CAMBIAR_CONTRASENA_SEGURA
+DB_PASSWORD=CAMBIAR_POR_UNA_CONTRASENA_SEGURA
 DB_NAME=tablero_incidentes
 
-JWT_SECRET=GENERAR_UN_SECRETO_LARGO_Y_ALEATORIO
+JWT_SECRET=CAMBIAR_POR_UN_SECRETO_LARGO_Y_ALEATORIO
 JWT_EXPIRES_IN=8h
 APP_TIMEZONE=America/Mexico_City
 ```
 
-No suba `.env` a Git ni lo incluya en respaldos compartidos. Para generar un secreto JWT en PowerShell puede utilizar:
+Puede generar un secreto JWT desde PowerShell:
 
 ```powershell
 [Convert]::ToHexString((1..64 | ForEach-Object { Get-Random -Maximum 256 }))
 ```
 
-### 4. Restaurar únicamente el superadministrador
+No publique ni comparta el archivo `.env`.
 
-En el equipo actual, genere el respaldo exclusivo de las cuentas con rol `super_admin`:
+## 3. Crear el primer superadministrador
 
-```powershell
-cd backend
-npm run respaldar-super-admin
+Opcionalmente defina en `backend/.env`:
+
+```dotenv
+ADMIN_NOMBRE=Super Administrador
+ADMIN_USUARIO=admin
+ADMIN_PASSWORD=
 ```
 
-Se genera `backend/backups/respaldo_super_usuario.sql`. Conserva nombre, usuario, correo, estado y hash de contraseña; no exporta unidades operativas, áreas, líneas, turnos, tipos de falla, incidentes, configuraciones ni videos. Para mantener la relación obligatoria de MySQL crea solamente la unidad técnica **Administración del sistema**.
+Si `ADMIN_PASSWORD` queda vacío, el sistema genera una contraseña segura y la muestra una sola vez en la consola.
 
-Copie ese archivo por un medio seguro al nuevo equipo y, después de instalar el esquema, impórtelo:
+Ejecute:
 
 ```powershell
-mysql -u tablero_app -p tablero_incidentes < backend/backups/respaldo_super_usuario.sql
+cd C:\ruta\tablero_incidentes\backend
+npm run crear-admin
 ```
 
-El respaldo está excluido de Git porque contiene el hash de la contraseña. Después del primer acceso, cree desde cero las nuevas unidades y sus catálogos.
+El script crea automáticamente la unidad técnica inicial y un usuario con rol `super_admin`. Guarde la contraseña mostrada y cámbiela después del primer acceso.
 
-### 5. Configurar correo y notificaciones push (opcional)
+## 4. Configurar Telegram (opcional)
 
-Para correo complete las variables `SMTP_*` incluidas en `backend/.env.example`. En Gmail debe usarse una contraseña de aplicación, no la contraseña normal de la cuenta.
+Cree el bot con `@BotFather` y agregue al `.env`:
 
-Para Web Push genere el par de claves y cópielas al `.env`:
+```dotenv
+TELEGRAM_BOT_TOKEN=TOKEN_PRIVADO_ENTREGADO_POR_BOTFATHER
+TELEGRAM_BOT_USERNAME=nombre_del_bot_sin_arroba
+TELEGRAM_POLLING_ENABLED=true
+```
+
+El token es una contraseña. No use el mismo token en dos equipos o dos procesos del backend. Telegram por polling requiere Internet, pero no necesita una IP pública ni abrir puertos de entrada.
+
+Después de iniciar el sistema, el administrador genera la liga individual desde **Configuración > Usuarios**.
+
+## 5. Configurar correo y Web Push (opcional)
+
+Complete las variables `SMTP_*` del `.env`. Para Gmail use una contraseña de aplicación.
+
+Para Web Push:
 
 ```powershell
-cd backend
+cd C:\ruta\tablero_incidentes\backend
 npm run generar-vapid
 ```
 
+Copie el resultado en:
+
 ```dotenv
 VAPID_SUBJECT=mailto:soporte@empresa.com
-VAPID_PUBLIC_KEY=...
-VAPID_PRIVATE_KEY=...
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
 ```
 
-Sin SMTP o VAPID el sistema principal continúa funcionando; únicamente quedan deshabilitadas esas funciones.
+Sin SMTP o VAPID, el registro y atención de incidencias siguen funcionando.
 
-### 6. Configurar y compilar el frontend
-
-`VITE_API_URL` se integra durante la compilación. Debe ser una URL alcanzable desde los equipos cliente, no `localhost` salvo que navegador y backend estén en el mismo equipo.
+## 6. Configurar y compilar el frontend
 
 ```powershell
-cd frontend
+cd C:\ruta\tablero_incidentes\frontend
+npm install
 Copy-Item .env.example .env
 ```
 
-Ejemplo para una red local:
+Si todo funciona en el mismo equipo:
+
+```dotenv
+VITE_API_URL=http://localhost:3010/api
+```
+
+Si otros equipos entrarán por la red, use la IP del servidor:
 
 ```dotenv
 VITE_API_URL=http://192.168.1.50:3010/api
 ```
 
-Instale y compile:
+Compile:
 
 ```powershell
-npm install
+npm run lint
 npm run build
 ```
 
-Publique el contenido generado en `frontend/dist`. El servidor web debe redirigir las rutas desconocidas a `index.html` para que funcione el enrutamiento de React.
+El resultado se crea en `frontend/dist`. La variable `VITE_API_URL` queda incorporada durante la compilación; si cambia, debe volver a ejecutar `npm run build`.
 
-### 7. Iniciar el backend
+## 7. Ejecutar en el equipo de pruebas
+
+Backend:
 
 ```powershell
-cd backend
+cd C:\ruta\tablero_incidentes\backend
 npm start
 ```
 
-La comprobación básica debe responder con JSON:
+Frontend para una instalación local pequeña:
+
+```powershell
+npm install --global serve
+cd C:\ruta\tablero_incidentes\frontend
+serve -s dist -l 5173
+```
+
+Abra:
+
+```text
+http://localhost:5173
+```
+
+Desde otro equipo use `http://IP_DEL_SERVIDOR:5173` y permita en Firewall de Windows los puertos TCP `5173` y `3010` solo para la red privada.
+
+Para operación estable, registre ambos comandos como servicios de Windows mediante NSSM o publique `frontend/dist` en IIS. No use `npm run dev` en producción.
+
+Configuración correcta:
+
+```text
+1 servicio frontend → sirve frontend/dist
+1 servicio backend  → ejecuta npm start y Telegram
+```
+
+No ejecute simultáneamente `npm start` y `npm run dev` dentro de `backend`.
+
+## 8. Verificar la instalación
+
+```powershell
+cd C:\ruta\tablero_incidentes\backend
+npm run verificar-instalacion
+```
+
+El comando comprueba variables esenciales, las 20 tablas, el superadministrador y que el frontend esté compilado.
+
+Compruebe también la API:
 
 ```powershell
 Invoke-RestMethod http://localhost:3010/api
 ```
 
-En producción no conviene depender de una consola abierta. Configure `npm start` como servicio con reinicio automático y registre stdout/stderr en archivos con rotación.
+## Videos por unidad
 
-## Videos de la vista TV
+Cada unidad tiene configuración independiente:
 
-La carpeta se define dentro del sistema en **Configuración > Videos**. Use **Aplicar y validar** para comprobarla y sincronizar el catálogo. El backend necesita permiso de lectura sobre esa ruta.
+- Mostrar u ocultar videos.
+- Carpeta local o de red propia.
+- Mostrar incidencias cerradas.
+- Intervalo de actualización de la vista TV.
 
-- La ruta pertenece al equipo donde se ejecuta el backend.
-- Si es una carpeta de red, use una ruta UNC (`\\servidor\\videos`) y conceda permisos a la cuenta que ejecuta el servicio.
-- Los archivos de video no deben guardarse en Git.
-- La vista TV y el dashboard reciben la lista vigente desde la API y reproducen los videos activos en bucle.
+Un administrador modifica únicamente su unidad; el superadministrador puede seleccionar cualquiera. Para carpetas de red use una ruta UNC, por ejemplo `\\servidor\videos\C2`, y conceda lectura a la cuenta que ejecuta el servicio backend.
 
-## Comandos disponibles
+## Comandos
 
-Backend, desde `backend/`:
+Backend:
 
-| Comando | Función |
+| Comando | Uso |
 |---|---|
-| `npm run dev` | Ejecuta la API con recarga automática |
-| `npm start` | Ejecuta la API en modo normal |
-| `npm run respaldar-super-admin` | Exporta únicamente los superadministradores |
+| `npm start` | Inicia el backend en modo normal |
+| `npm run dev` | Desarrollo con reinicio automático |
+| `npm run crear-admin` | Crea el primer superadministrador |
+| `npm run verificar-instalacion` | Revisa el equipo instalado |
+| `npm run verificar-telegram` | Revisa el esquema de Telegram |
 | `npm run generar-vapid` | Genera claves Web Push |
+| `npm run respaldar-super-admin` | Respalda los superadministradores |
 
-Frontend, desde `frontend/`:
+Frontend:
 
-| Comando | Función |
+| Comando | Uso |
 |---|---|
-| `npm run dev` | Servidor local de desarrollo |
+| `npm run dev` | Desarrollo local |
 | `npm run lint` | Revisión estática |
-| `npm run build` | Compilación de producción |
-| `npm run preview` | Vista previa local de la compilación |
+| `npm run build` | Compilación para operación |
+| `npm run preview` | Vista previa de la compilación |
 
-## Datos que deben respaldarse
+## Lista de comprobación
 
-Para este traslado inicial conserve únicamente `backend/backups/respaldo_super_usuario.sql`. No restaure un respaldo completo anterior, pues las unidades, catálogos e incidentes deben comenzar vacíos.
+- [ ] Node.js y MySQL 8 instalados.
+- [ ] `esquema_completo.sql` ejecutado sin errores.
+- [ ] `backend/.env` creado y protegido.
+- [ ] Dependencias instaladas en backend y frontend.
+- [ ] Superadministrador creado.
+- [ ] `VITE_API_URL` apunta al servidor correcto.
+- [ ] Frontend compilado.
+- [ ] Solo una instancia del backend activa.
+- [ ] Firewall configurado para la red privada.
+- [ ] Telegram, SMTP y VAPID configurados si se utilizarán.
+- [ ] Carpetas de videos validadas por unidad.
+- [ ] Inicio de sesión y flujo de una incidencia probados.
+- [ ] Servicios configurados para iniciar con Windows.
+- [ ] Respaldo periódico de MySQL configurado.
 
-Después de poner en operación el nuevo sistema, un respaldo completo requerirá dos elementos:
+## Respaldos
 
-1. La base MySQL.
-2. La carpeta de videos configurada, si contiene material que no existe en otro almacenamiento.
-
-Ejemplo de respaldo de la base:
+Respaldo completo:
 
 ```powershell
 mysqldump --single-transaction --routines --triggers -u tablero_app -p tablero_incidentes > tablero_incidentes.sql
 ```
 
-Ejemplo de restauración:
+Restauración:
 
 ```powershell
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS tablero_incidentes CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root -p < backend\sql\esquema_completo.sql
 mysql -u tablero_app -p tablero_incidentes < tablero_incidentes.sql
 ```
 
-Pruebe periódicamente la restauración en una base separada. Respalde el `.env` en un almacén seguro de secretos, no junto al código.
+Respalde también las carpetas de videos si los archivos no existen en otra ubicación. Guarde el `.env` en un almacén seguro, separado del código y de los respaldos compartidos.
 
-## Lista de verificación para la migración
+## Problemas comunes
 
-- [ ] Node.js y MySQL instalados.
-- [ ] Proyecto copiado sin secretos ni dependencias generadas.
-- [ ] Base vacía creada con `esquema_completo.sql`.
-- [ ] Usuario MySQL de la aplicación creado.
-- [ ] `backend/.env` creado y `JWT_SECRET` renovado.
-- [ ] Dependencias instaladas en backend y frontend.
-- [ ] Respaldo exclusivo del superadministrador generado e importado.
-- [ ] `VITE_API_URL` apunta a la IP o dominio del servidor.
-- [ ] Frontend recompilado y publicado.
-- [ ] Backend instalado como servicio con reinicio automático.
-- [ ] Puertos/firewall y CORS validados desde otro equipo.
-- [ ] Carpeta de videos configurada y accesible para el servicio.
-- [ ] Inicio de sesión, alta de incidente, atención, histórico y vista TV probados.
-- [ ] Respaldo automático de MySQL y videos programado.
+- **Telegram indica conflicto:** hay dos backend usando el mismo token. Deje solo un `src/server.js` activo.
+- **El frontend intenta usar localhost desde otro equipo:** cambie `VITE_API_URL` por la IP del servidor y vuelva a compilar.
+- **Una ruta web devuelve 404 al actualizar:** el servidor del frontend debe usar fallback a `index.html`; `serve -s` ya lo hace.
+- **No se reproducen videos:** revise la ruta de la unidad y los permisos de la cuenta del servicio.
+- **La API no inicia:** revise MySQL, `backend/.env` y el puerto `3010`.
+- **No llega correo:** revise las variables SMTP, la contraseña de aplicación y la salida a Internet.
+- **No llegan avisos Push:** fuera de `localhost`, normalmente se necesita HTTPS.
 
-## Actualizaciones futuras
+## Seguridad
 
-Antes de actualizar, respalde MySQL y la carpeta de videos. Después:
-
-```powershell
-cd backend
-npm install
-
-cd ..\frontend
-npm install
-npm run lint
-npm run build
-```
-
-Reinicie el servicio del backend y sustituya el contenido publicado del frontend. Si una versión incorpora una migración SQL adicional, ejecútela antes de iniciar el backend nuevo.
-
-## Solución de problemas
-
-- **La API no inicia:** revise `backend/.env`, que MySQL esté activo y que el usuario tenga permisos sobre `DB_NAME`.
-- **El frontend intenta conectarse a localhost:** corrija `frontend/.env` y vuelva a ejecutar `npm run build`.
-- **La ruta de videos no se encuentra:** confirme que la ruta existe en el servidor y que la cuenta del servicio tiene acceso. Una unidad de red asignada a un usuario interactivo puede no existir para un servicio; prefiera UNC.
-- **No llegan correos:** compruebe `SMTP_*`, la contraseña de aplicación y la salida al puerto SMTP.
-- **No llegan notificaciones push:** configure VAPID, permita notificaciones en el navegador y use HTTPS fuera de `localhost`.
-- **Una ruta del frontend devuelve 404 al recargar:** configure el servidor web para entregar `index.html` como fallback.
-
-## Seguridad operativa
-
-- Use HTTPS al publicar fuera de una red aislada.
-- No exponga MySQL directamente a Internet.
-- Limite el acceso a los puertos del backend y de MySQL mediante firewall.
-- Use contraseñas distintas para MySQL, SMTP y usuarios del sistema.
-- Renueve `JWT_SECRET` y las credenciales al cambiar de equipo o responsable.
-- Mantenga Node.js, MySQL y las dependencias actualizados después de probar los cambios.
+- No exponga MySQL a Internet.
+- Restrinja los puertos mediante Firewall de Windows.
+- Use HTTPS si el sistema sale de una red local confiable.
+- No comparta tokens, contraseñas ni archivos `.env`.
+- Cambie las credenciales predeterminadas y mantenga Node.js, MySQL y Windows actualizados.

@@ -8,6 +8,10 @@ const {
     cambiarPassword,
     cambiarEstadoUsuario
 } = require('../controllers/usuarios.controller');
+const {
+    desvincularTelegram,
+    generarVinculacion
+} = require('../controllers/telegram.controller');
 
 const {
     verificarToken,
@@ -25,5 +29,7 @@ router.post('/', crearUsuario);
 router.put('/:id', actualizarUsuario);
 router.patch('/:id/password', cambiarPassword);
 router.patch('/:id/estado', cambiarEstadoUsuario);
+router.post('/:id/telegram/vinculacion', generarVinculacion);
+router.delete('/:id/telegram/vinculacion', desvincularTelegram);
 
 module.exports = router;

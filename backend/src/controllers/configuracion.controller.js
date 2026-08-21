@@ -1,6 +1,4 @@
 const db = require('../config/db');
-const fs = require('fs/promises');
-const path = require('path');
 
 const {
     enviarResumenDiario,
@@ -26,12 +24,9 @@ const CONFIGURACION_GENERAL = {
     prioridadDefault: ['prioridad_default', 'texto'],
     tiempoPrimeraRespuesta: ['tiempo_primera_respuesta', 'numero'],
     tiempoResolucion: ['tiempo_resolucion', 'numero'],
-    refrescoTv: ['actualizacion_tablero_segundos', 'numero'],
-    mostrarCerradasTv: ['mostrar_cerradas_tv', 'booleano'],
     notificacionesPantalla: ['notificaciones_pantalla', 'booleano'],
     sonidoAlertas: ['sonido_alertas', 'booleano'],
-    resumenDiario: ['resumen_diario', 'booleano'],
-    rutaVideos: ['ruta_videos', 'texto']
+    resumenDiario: ['resumen_diario', 'booleano']
 };
 
 const VALORES_CONFIGURACION_GENERAL = {
@@ -41,13 +36,44 @@ const VALORES_CONFIGURACION_GENERAL = {
     prioridadDefault: 'media',
     tiempoPrimeraRespuesta: 15,
     tiempoResolucion: 120,
-    refrescoTv: 30,
-    mostrarCerradasTv: false,
     notificacionesPantalla: true,
     sonidoAlertas: false,
-    resumenDiario: true,
-    rutaVideos: ''
+    resumenDiario: true
 };
+
+function unidadTvSolicitada(req) {
+    const solicitada = Number(
+        req.query?.unidad_negocio_id || req.body?.unidad_negocio_id
+    );
+    return esSuperAdmin(req) && solicitada
+        ? solicitada
+        : Number(req.user.unidad_negocio_id);
+}
+
+async function asegurarConfiguracionTv(unidadNegocioId, connection = db) {
+    await connection.query(
+        `INSERT INTO configuracion_tv_unidad (unidad_negocio_id)
+         VALUES (?) ON DUPLICATE KEY UPDATE unidad_negocio_id = unidad_negocio_id`,
+        [unidadNegocioId]
+    );
+    const [[configuracion]] = await connection.query(
+        `SELECT unidad_negocio_id, mostrar_videos, ruta_videos,
+                mostrar_cerradas, refresco_segundos
+         FROM configuracion_tv_unidad WHERE unidad_negocio_id = ? LIMIT 1`,
+        [unidadNegocioId]
+    );
+    return configuracion;
+}
+
+function convertirConfiguracionTv(configuracion) {
+    return {
+        unidadNegocioId: Number(configuracion.unidad_negocio_id),
+        mostrarVideosTv: Boolean(configuracion.mostrar_videos),
+        rutaVideos: configuracion.ruta_videos || '',
+        mostrarCerradasTv: Boolean(configuracion.mostrar_cerradas),
+        refrescoTv: Number(configuracion.refresco_segundos)
+    };
+}
 
 async function asegurarConfiguracionGeneral() {
     await Promise.all(
@@ -97,6 +123,11 @@ async function obtenerConfiguracionGeneral(req, res) {
             }
         );
 
+        const configTv = await asegurarConfiguracionTv(
+            Number(req.user.unidad_negocio_id)
+        );
+        Object.assign(data, convertirConfiguracionTv(configTv));
+
         return res.json({ success: true, data });
     } catch (error) {
         console.error('Error al obtener configuracion general:', error);
@@ -111,20 +142,6 @@ async function guardarConfiguracionGeneral(req, res) {
     const connection = await db.getConnection();
 
     try {
-        if (req.body.rutaVideos) {
-            const rutaVideos = path.resolve(req.body.rutaVideos);
-            const estado = await fs.stat(rutaVideos).catch(() => null);
-
-            if (!estado?.isDirectory()) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'La carpeta de videos no existe en el servidor'
-                });
-            }
-
-            req.body.rutaVideos = rutaVideos;
-        }
-
         await connection.beginTransaction();
 
         for (const [campo, [clave, tipo]] of Object.entries(CONFIGURACION_GENERAL)) {
@@ -158,6 +175,45 @@ async function guardarConfiguracionGeneral(req, res) {
         });
     } finally {
         connection.release();
+    }
+}
+
+async function obtenerConfiguracionTv(req, res) {
+    try {
+        const unidadNegocioId = unidadTvSolicitada(req);
+        const configuracion = await asegurarConfiguracionTv(unidadNegocioId);
+        return res.json({ success: true, data: convertirConfiguracionTv(configuracion) });
+    } catch (error) {
+        console.error('Error al obtener configuracion TV:', error);
+        return res.status(500).json({ success: false, message: 'No fue posible obtener la configuracion TV' });
+    }
+}
+
+async function guardarConfiguracionTv(req, res) {
+    try {
+        const unidadNegocioId = unidadTvSolicitada(req);
+        const refresco = Number(req.body.refrescoTv);
+        if (!Number.isFinite(refresco) || refresco < 5 || refresco > 3600) {
+            return res.status(400).json({ success: false, message: 'El refresco de TV debe estar entre 5 y 3600 segundos' });
+        }
+        const [unidades] = await db.query(
+            'SELECT id FROM unidades_negocio WHERE id = ? AND activo = 1 LIMIT 1',
+            [unidadNegocioId]
+        );
+        if (!unidades[0]) {
+            return res.status(404).json({ success: false, message: 'Unidad de negocio no encontrada' });
+        }
+        await asegurarConfiguracionTv(unidadNegocioId);
+        await db.query(
+            `UPDATE configuracion_tv_unidad SET mostrar_videos = ?,
+             mostrar_cerradas = ?, refresco_segundos = ? WHERE unidad_negocio_id = ?`,
+            [Boolean(req.body.mostrarVideosTv), Boolean(req.body.mostrarCerradasTv), refresco, unidadNegocioId]
+        );
+        const configuracion = await asegurarConfiguracionTv(unidadNegocioId);
+        return res.json({ success: true, message: 'Configuracion TV guardada', data: convertirConfiguracionTv(configuracion) });
+    } catch (error) {
+        console.error('Error al guardar configuracion TV:', error);
+        return res.status(500).json({ success: false, message: 'No fue posible guardar la configuracion TV' });
     }
 }
 
@@ -431,6 +487,9 @@ module.exports = {
     enviarResumenDiarioPrueba,
     guardarConfigEnvioDiario,
     guardarConfiguracionGeneral,
+    guardarConfiguracionTv,
     obtenerConfigEnvioDiario,
-    obtenerConfiguracionGeneral
+    obtenerConfiguracionGeneral,
+    obtenerConfiguracionTv,
+    asegurarConfiguracionTv
 };

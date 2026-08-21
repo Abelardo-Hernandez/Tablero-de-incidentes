@@ -47,9 +47,11 @@ import {
 import {
     enviarResumenDiarioPrueba,
     guardarConfiguracionGeneral,
+    guardarConfiguracionTv,
     guardarConfigEnvioDiario as guardarConfigEnvioDiarioServidor,
     obtenerConfigEnvioDiario,
-    obtenerConfiguracionGeneral
+    obtenerConfiguracionGeneral,
+    obtenerConfiguracionTv
 } from '../../services/configuracion.service';
 
 import {
@@ -71,6 +73,9 @@ function ConfiguracionPage() {
     const [enviandoPrueba, setEnviandoPrueba] = useState(false);
     const [validandoVideos, setValidandoVideos] = useState(false);
     const [resultadoVideos, setResultadoVideos] = useState(null);
+    const [unidadTvId, setUnidadTvId] = useState(
+        usuario?.unidad_negocio_id || ''
+    );
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState('');
     const [errorEnvio, setErrorEnvio] = useState('');
@@ -102,7 +107,8 @@ function ConfiguracionPage() {
                     respuestaUsuarios,
                     respuestaUnidades,
                     respuestaEnvioDiario,
-                    respuestaConfiguracionGeneral
+                    respuestaConfiguracionGeneral,
+                    respuestaConfiguracionTv
                 ] = await Promise.all([
                     obtenerAreas(),
                     obtenerLineas(),
@@ -113,12 +119,14 @@ function ConfiguracionPage() {
                         ? obtenerUnidadesNegocio()
                         : Promise.resolve({ data: [] }),
                     obtenerConfigEnvioDiario(),
-                    obtenerConfiguracionGeneral()
+                    obtenerConfiguracionGeneral(),
+                    obtenerConfiguracionTv(usuario?.unidad_negocio_id)
                 ]);
 
                 const configuracionServidor = {
                     ...configuracionInicial,
-                    ...(respuestaConfiguracionGeneral.data || {})
+                    ...(respuestaConfiguracionGeneral.data || {}),
+                    ...(respuestaConfiguracionTv.data || {})
                 };
 
                 setConfiguracion(configuracionServidor);
@@ -161,7 +169,25 @@ function ConfiguracionPage() {
         }
 
         cargarCatalogos();
-    }, [esSuperAdmin]);
+    }, [esSuperAdmin, usuario?.unidad_negocio_id]);
+
+    async function cambiarUnidadTv(evento) {
+        const id = Number(evento.target.value);
+        setUnidadTvId(id);
+        setResultadoVideos(null);
+        try {
+            const respuesta = await obtenerConfiguracionTv(id);
+            setConfiguracion((actual) => ({
+                ...actual,
+                ...(respuesta.data || {})
+            }));
+        } catch (errorSolicitud) {
+            setError(
+                errorSolicitud.response?.data?.message ||
+                'No fue posible cargar la configuracion TV de la unidad.'
+            );
+        }
+    }
 
     const resumen = useMemo(
         () => {
@@ -299,11 +325,22 @@ function ConfiguracionPage() {
 
         try {
             setErrorEnvio('');
-            guardarConfiguracionLocal(configuracion);
-
             await guardarConfiguracionGeneral(configuracion);
 
+            await guardarConfiguracionTv({
+                unidad_negocio_id: unidadTvId,
+                mostrarVideosTv: configuracion.mostrarVideosTv,
+                mostrarCerradasTv: configuracion.mostrarCerradasTv,
+                refrescoTv: configuracion.refrescoTv
+            });
+
             await guardarConfigEnvioDiarioServidor(envioDiario);
+
+            const respuestaSesion = await obtenerConfiguracionGeneral();
+            guardarConfiguracionLocal({
+                ...configuracionInicial,
+                ...(respuestaSesion.data || {})
+            });
 
             setGuardado(true);
             setGuardadoEnvio(true);
@@ -327,7 +364,8 @@ function ConfiguracionPage() {
             setErrorEnvio('');
 
             const respuesta = await validarRutaVideos(
-                configuracion.rutaVideos || ''
+                configuracion.rutaVideos || '',
+                unidadTvId
             );
             const rutaAplicada = respuesta.data?.ruta || '';
             const siguiente = {
@@ -336,7 +374,9 @@ function ConfiguracionPage() {
             };
 
             setConfiguracion(siguiente);
-            guardarConfiguracionLocal(siguiente);
+            if (Number(unidadTvId) === Number(usuario?.unidad_negocio_id)) {
+                guardarConfiguracionLocal(siguiente);
+            }
             setResultadoVideos({
                 correcto: true,
                 mensaje: respuesta.message
@@ -490,6 +530,28 @@ function ConfiguracionPage() {
                             opciones={prioridadesConfiguracion}
                         />
 
+                        {esSuperAdmin && (
+                            <label className="md:col-span-2">
+                                <span className="mb-2 block text-sm font-bold text-slate-700">
+                                    Unidad para configurar la vista TV
+                                </span>
+                                <select
+                                    value={unidadTvId}
+                                    onChange={cambiarUnidadTv}
+                                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                                >
+                                    {catalogos.unidadesNegocio.map((unidad) => (
+                                        <option key={unidad.id} value={unidad.id}>
+                                            {unidad.nombre}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="mt-2 text-xs text-slate-500">
+                                    Los cambios de videos, refresco y contenido TV se aplican solo a esta unidad.
+                                </p>
+                            </label>
+                        )}
+
                         <div className="md:col-span-2">
                             <CampoTexto
                                 label="Carpeta de videos en el servidor"
@@ -618,6 +680,14 @@ function ConfiguracionPage() {
                             descripcion="Preparar indicadores para revisión de cierre de turno."
                             name="resumenDiario"
                             checked={configuracion.resumenDiario}
+                            onChange={manejarCambio}
+                        />
+
+                        <Toggle
+                            label="Mostrar videos en TV"
+                            descripcion="Alternar entre tablero con videos o incidencias a todo lo ancho."
+                            name="mostrarVideosTv"
+                            checked={configuracion.mostrarVideosTv}
                             onChange={manejarCambio}
                         />
 

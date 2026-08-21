@@ -248,6 +248,39 @@ a {
         0 0 22px rgba(245, 158, 11, 0.22);
 }
 
+.tv-title-scroll {
+    animation: tv-title-scroll var(--tv-title-duration, 10s) ease-in-out infinite;
+    will-change: transform, opacity;
+}
+
+@keyframes tv-title-scroll {
+    0%,
+    12% {
+        opacity: 1;
+        transform: translateX(0);
+    }
+
+    75% {
+        opacity: 1;
+        transform: translateX(var(--tv-title-offset));
+    }
+
+    87% {
+        opacity: 0;
+        transform: translateX(var(--tv-title-offset));
+    }
+
+    88% {
+        opacity: 0;
+        transform: translateX(0);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
 @keyframes tv-line-stop-critical {
     0%,
     100% {
@@ -330,7 +363,8 @@ a {
     .tv-new-incident,
     .tv-threshold-incident,
     .tv-overdue-incident,
-    .tv-line-stop-unassigned {
+    .tv-line-stop-unassigned,
+    .tv-title-scroll {
         animation: none;
     }
 

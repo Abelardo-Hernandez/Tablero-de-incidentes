@@ -19,6 +19,8 @@ import {
     useState
 } from 'react';
 
+import { useSearchParams } from 'react-router';
+
 import {
     obtenerAreasActivas,
     obtenerLineasActivas,
@@ -85,6 +87,7 @@ const estadosAbiertos = [
 
 function IncidenciasPage() {
     const { usuario } = useAuth();
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const [incidencias, setIncidencias] = useState([]);
     const [areas, setAreas] = useState([]);
@@ -101,6 +104,16 @@ function IncidenciasPage() {
     const [modalAbierto, setModalAbierto] = useState(false);
     const [incidenciaSeleccionada, setIncidenciaSeleccionada] =
         useState(null);
+
+    useEffect(() => {
+        const incidenciaId = Number(searchParams.get('incidencia'));
+        if (!incidenciaId || incidenciaSeleccionada) return;
+
+        const encontrada = incidencias.find(
+            (incidencia) => Number(incidencia.id) === incidenciaId
+        );
+        if (encontrada) setIncidenciaSeleccionada(encontrada);
+    }, [incidencias, incidenciaSeleccionada, searchParams]);
     const [tomandoId, setTomandoId] = useState(null);
     const [permisoNotificaciones, setPermisoNotificaciones] =
         useState(() => {
@@ -947,9 +960,14 @@ function IncidenciasPage() {
                 abierto={Boolean(incidenciaSeleccionada)}
                 incidencia={incidenciaSeleccionada}
                 usuarios={usuarios}
-                onCerrar={() =>
-                    setIncidenciaSeleccionada(null)
-                }
+                onCerrar={() => {
+                    setIncidenciaSeleccionada(null);
+                    if (searchParams.has('incidencia')) {
+                        const siguientes = new URLSearchParams(searchParams);
+                        siguientes.delete('incidencia');
+                        setSearchParams(siguientes, { replace: true });
+                    }
+                }}
                 onActualizado={cargarIncidencias}
             />
         </div>

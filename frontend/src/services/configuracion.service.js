@@ -10,6 +10,20 @@ export async function guardarConfiguracionGeneral(datos) {
     return response.data;
 }
 
+export async function obtenerConfiguracionTv(unidadNegocioId) {
+    const response = await api.get('/configuracion/tv', {
+        params: unidadNegocioId
+            ? { unidad_negocio_id: unidadNegocioId }
+            : undefined
+    });
+    return response.data;
+}
+
+export async function guardarConfiguracionTv(datos) {
+    const response = await api.put('/configuracion/tv', datos);
+    return response.data;
+}
+
 export async function obtenerConfigEnvioDiario() {
     const response = await api.get('/configuracion/envio-diario');
 

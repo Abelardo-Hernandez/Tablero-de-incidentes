@@ -22,6 +22,8 @@ const formularioInicial = {
     nombre: '',
     usuario: '',
     correo: '',
+    telefono_contacto: '',
+    telegram_habilitado: false,
     password: '',
     rol: 'usuario',
     unidad_negocio_id: '',
@@ -60,6 +62,11 @@ function UsuarioModal({
                 nombre: usuarioEditar.nombre || '',
                 usuario: usuarioEditar.usuario || '',
                 correo: usuarioEditar.correo || '',
+                telefono_contacto:
+                    usuarioEditar.telefono_contacto || '',
+                telegram_habilitado: Boolean(
+                    usuarioEditar.telegram_habilitado
+                ),
                 password: '',
                 rol: usuarioEditar.rol || 'usuario',
                 unidad_negocio_id:
@@ -198,6 +205,18 @@ function UsuarioModal({
             return;
         }
 
+        const telefonoContacto = formulario.telefono_contacto
+            .trim()
+            .replace(/^00/, '')
+            .replace(/\D/g, '');
+
+        if (telefonoContacto && !/^\d{10,15}$/.test(telefonoContacto)) {
+            setError(
+                'El telefono de contacto debe incluir de 10 a 15 digitos.'
+            );
+            return;
+        }
+
         if (
             formulario.rol === 'usuario' &&
             !formulario.area_id
@@ -223,6 +242,7 @@ function UsuarioModal({
             nombre: formulario.nombre.trim(),
             usuario: formulario.usuario.trim(),
             correo: formulario.correo.trim() || null,
+            telefono_contacto: telefonoContacto || null,
             rol: formulario.rol,
             area_id: formulario.area_id
                 ? Number(formulario.area_id)
@@ -361,6 +381,30 @@ function UsuarioModal({
                                 autoComplete="email"
                                 className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
                             />
+                        </div>
+
+                        <div>
+                            <label
+                                htmlFor="telefono_contacto"
+                                className="mb-2 block text-sm font-semibold text-slate-700"
+                            >
+                                Telefono de contacto
+                            </label>
+
+                            <input
+                                id="telefono_contacto"
+                                name="telefono_contacto"
+                                type="tel"
+                                value={formulario.telefono_contacto}
+                                onChange={manejarCambio}
+                                placeholder="Ej. +52 55 1234 5678"
+                                disabled={guardando}
+                                autoComplete="tel"
+                                className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-600/10"
+                            />
+                            <p className="mt-1 text-xs text-slate-500">
+                                Incluye codigo de pais. Se guardara solo con digitos.
+                            </p>
                         </div>
 
                         {!editando && (
@@ -527,6 +571,31 @@ function UsuarioModal({
                     </div>
 
                     <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+                        <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl bg-white p-4">
+                            <div>
+                                <p className="text-sm font-bold text-slate-800">
+                                    Telegram
+                                </p>
+
+                                <p className="mt-1 text-xs text-slate-500">
+                                    {formulario.telegram_habilitado
+                                        ? 'Cuenta vinculada con el bot.'
+                                        : 'Pendiente de vincular con el bot.'}
+                                </p>
+                            </div>
+
+                            <span className={[
+                                'rounded-full px-2.5 py-1 text-xs font-bold',
+                                formulario.telegram_habilitado
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-slate-100 text-slate-500'
+                            ].join(' ')}>
+                                {formulario.telegram_habilitado
+                                    ? 'Vinculado'
+                                    : 'No vinculado'}
+                            </span>
+                        </label>
+
                         <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl bg-white p-4">
                             <div>
                                 <p className="text-sm font-bold text-slate-800">

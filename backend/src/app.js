@@ -17,7 +17,11 @@ const notificacionesRoutes = require('./routes/notificaciones.routes');
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+    verify: (req, res, buffer) => {
+        req.rawBody = buffer;
+    }
+}));
 
 app.get('/api', (req, res) => {
     res.json({

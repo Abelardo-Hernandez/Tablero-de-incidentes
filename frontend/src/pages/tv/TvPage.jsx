@@ -6,6 +6,7 @@ import {
 
 import {
     useEffect,
+    useLayoutEffect,
     useMemo,
     useRef,
     useState
@@ -269,6 +270,13 @@ function TvPage() {
     );
 
     useEffect(() => {
+        if (!configuracion.mostrarVideosTv) {
+            setVideos([]);
+            setVideoActual(0);
+            setVideoDisponible(false);
+            return undefined;
+        }
+
         async function cargarVideos() {
             try {
                 const respuesta =
@@ -313,7 +321,7 @@ function TvPage() {
         );
 
         return () => window.clearInterval(intervaloVideos);
-    }, []);
+    }, [configuracion.mostrarVideosTv]);
 
     useEffect(() => {
         function manejarCambioPantallaCompleta() {
@@ -422,7 +430,12 @@ function TvPage() {
                 )}
             </button>
 
-            <div className="grid h-full gap-5 xl:grid-cols-[0.95fr_1.45fr]">
+            <div className={[
+                'grid h-full gap-5',
+                configuracion.mostrarVideosTv
+                    ? 'xl:grid-cols-[0.95fr_1.45fr]'
+                    : 'grid-cols-1'
+            ].join(' ')}>
                 <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
                     <header className="border-b border-white/10 px-4 py-3 pr-14">
                         <div className="flex items-center justify-between gap-4">
@@ -485,6 +498,7 @@ function TvPage() {
                     </div>
                 </section>
 
+                {configuracion.mostrarVideosTv && (
                 <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-black">
                     <div className="relative flex min-h-[320px] flex-1 items-center justify-center overflow-hidden">
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.12),transparent_58%)]" />
@@ -536,7 +550,73 @@ function TvPage() {
                         )}
                     </div>
                 </section>
+                )}
             </div>
+        </div>
+    );
+}
+
+function TituloDesplazable({ texto }) {
+    const contenedorRef = useRef(null);
+    const textoRef = useRef(null);
+    const [animacion, setAnimacion] = useState({
+        activa: false,
+        distancia: 0,
+        duracion: 10
+    });
+
+    useLayoutEffect(() => {
+        const contenedor = contenedorRef.current;
+        const elementoTexto = textoRef.current;
+
+        if (!contenedor || !elementoTexto) return undefined;
+
+        const medir = () => {
+            const distancia = Math.max(
+                0,
+                elementoTexto.scrollWidth - contenedor.clientWidth
+            );
+
+            setAnimacion({
+                activa: distancia > 4,
+                distancia,
+                duracion: Math.min(
+                    24,
+                    Math.max(9, 7 + distancia / 34)
+                )
+            });
+        };
+
+        medir();
+
+        const observador = new ResizeObserver(medir);
+        observador.observe(contenedor);
+        observador.observe(elementoTexto);
+        document.fonts?.ready.then(medir);
+
+        return () => observador.disconnect();
+    }, [texto]);
+
+    return (
+        <div
+            ref={contenedorRef}
+            className="mt-1 h-7 overflow-hidden whitespace-nowrap text-lg font-bold leading-7"
+        >
+            <span
+                ref={textoRef}
+                className={[
+                    'inline-block min-w-max',
+                    animacion.activa ? 'tv-title-scroll' : ''
+                ].join(' ')}
+                style={animacion.activa
+                    ? {
+                        '--tv-title-offset': `-${animacion.distancia}px`,
+                        '--tv-title-duration': `${animacion.duracion}s`
+                    }
+                    : undefined}
+            >
+                {texto}
+            </span>
         </div>
     );
 }
@@ -618,7 +698,7 @@ function IncidenciaFila({
             ].join(' ')}
         >
             <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                     <p
                         className={[
                             'truncate text-sm font-bold uppercase tracking-[0.16em]',
@@ -636,9 +716,7 @@ function IncidenciaFila({
                         {textoAlerta && ` · ${textoAlerta}`}
                     </p>
 
-                    <p className="mt-1 truncate text-lg font-bold">
-                        {incidencia.titulo}
-                    </p>
+                    <TituloDesplazable texto={incidencia.titulo} />
 
                     <p className="mt-1 truncate text-sm font-semibold text-slate-400">
                         {incidencia.responsable_nombre
